@@ -12,18 +12,35 @@ import '../../core/widgets/info_step.dart';
 import '../../controllers/home_controller.dart';
 import '../chat_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Check permissions on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(homeControllerProvider.notifier).checkPermissions();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(homeControllerProvider);
     final controller = ref.read(homeControllerProvider.notifier);
     
     ref.listen(homeControllerProvider, (previous, next) {
       if (next.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.errorMessage!)),
+          SnackBar(
+            content: Text(next.errorMessage!),
+            backgroundColor: AppColors.danger,
+          ),
         );
         controller.clearError();
       }
@@ -66,11 +83,30 @@ class HomeScreen extends ConsumerWidget {
               if (state.permissionStatus.needsAccessibility)
                 PermissionCard(
                   title: 'Accessibility Permission',
-                  description: 'Required for screen scanner',
+                  description: 'Required for screen scanner to detect scams',
                   icon: Icons.accessibility_new,
                   color: AppColors.emotional,
                   onTap: () => controller.requestAccessibilityPermission(),
                 ),
+              
+              const SizedBox(height: 16),
+              AppContainer(
+                padding: const EdgeInsets.all(16),
+                color: AppColors.info.withOpacity(0.1),
+                border: BorderSide(color: AppColors.info.withOpacity(0.3)),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppColors.info, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Both permissions are required for the floating bubble to work properly',
+                        style: AppTextStyles.body3.copyWith(color: AppColors.info),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
@@ -195,9 +231,11 @@ class HomeScreen extends ConsumerWidget {
     HomeState state,
     HomeController controller,
   ) {
+    final canToggle = state.permissionStatus.hasAll && !state.isLoading;
+    
     return FeatureCard(
       title: 'Smart Chatbot & Scam Detector',
-      description: 'Floating AI assistant with screen analyzer',
+      description: 'Floating AI assistant with real-time screen analyzer',
       icon: Icons.chat_bubble_outline,
       iconColor: AppColors.primary,
       status: state.bubbleActive ? 'Active' : 'Inactive',
@@ -207,11 +245,36 @@ class HomeScreen extends ConsumerWidget {
         'Screen Scanner',
         'Scam Detection',
       ],
-      trailing: Switch(
-        value: state.bubbleActive,
-        onChanged: state.isLoading ? null : (value) => controller.toggleBubble(value),
-        activeColor: AppColors.primary,
-      ),
+      trailing: state.isLoading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(AppColors.primary),
+              ),
+            )
+          : Switch(
+              value: state.bubbleActive,
+              onChanged: canToggle
+                  ? (value) async {
+                      final success = await controller.toggleBubble(value);
+                      if (success && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              value
+                                  ? 'Floating bubble activated! Check your screen.'
+                                  : 'Floating bubble deactivated',
+                            ),
+                            backgroundColor: value ? AppColors.success : AppColors.lightGray,
+                          ),
+                        );
+                      }
+                    }
+                  : null,
+              activeColor: AppColors.primary,
+            ),
     );
   }
 
@@ -230,9 +293,10 @@ class HomeScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const InfoStep(number: '1', text: 'Enable permissions'),
+          const InfoStep(number: '1', text: 'Grant all required permissions'),
           const InfoStep(number: '2', text: 'Toggle Smart Chatbot ON'),
-          const InfoStep(number: '3', text: 'Use floating bubble'),
+          const InfoStep(number: '3', text: 'Tap the floating bubble to open menu'),
+          const InfoStep(number: '4', text: 'Use Scanner icon to detect scams on screen'),
         ],
       ),
     );
