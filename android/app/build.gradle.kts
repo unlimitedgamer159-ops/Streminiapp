@@ -1,28 +1,26 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android") // Updated to match Root definition
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
     namespace = "com.example.stremini_chatbot"
-    compileSdk = 35 // 36 is likely Canary/Preview. 35 is Android 15 (current stable-ish).
-    ndkVersion = "26.1.10909125" // Adjusted to a common stable NDK, or keep yours if installed.
+    compileSdk = 34
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-        // Java 21 is very new for Android compilation, 17 is safer for now.
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = "17" // Must match compileOptions above
+        jvmTarget = "1.8"
     }
 
     defaultConfig {
         applicationId = "com.example.stremini_chatbot"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
 
@@ -38,13 +36,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false
         }
     }
 
-    // 'packagingOptions' is deprecated in newer AGP, replaced by 'packaging' block
     packaging {
         resources {
             excludes += "META-INF/DEPENDENCIES"
