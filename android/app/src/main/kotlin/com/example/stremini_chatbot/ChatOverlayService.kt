@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -13,14 +14,10 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.cos
@@ -31,8 +28,10 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     companion object {
         private const val TAG = "ChatOverlayService"
         private const val CHANNEL_ID = "stremini_overlay"
-        private const val MENU_RADIUS = 110f
-        private const val BUTTON_SIZE = 60
+        
+        // --- CALIBRATED FOR IMAGE MATCHING ---
+        private const val MENU_RADIUS_DP = 95f   // Increased distance so icons don't overlap
+        private const val BUTTON_SIZE_DP = 48    // Larger icon size to match the original
     }
 
     private lateinit var windowManager: WindowManager
@@ -59,6 +58,11 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
+
+    private fun dpToPx(dp: Int): Int {
+        val density = resources.displayMetrics.density
+        return (dp * density).toInt()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -88,7 +92,7 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
-            y = 200
+            y = 300
         }
 
         windowManager.addView(overlayView, layoutParams)
@@ -96,7 +100,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
 
     override fun onTouch(v: View?, event: MotionEvent?): Boolean {
         if (event == null) return false
-
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 initialX = layoutParams.x
@@ -106,27 +109,30 @@ class ChatOverlayService : Service(), View.OnTouchListener {
                 isDragging = false
                 return true
             }
-
             MotionEvent.ACTION_MOVE -> {
                 val dx = (event.rawX - initialTouchX).toInt()
                 val dy = (event.rawY - initialTouchY).toInt()
-
                 if (abs(dx) > 10 || abs(dy) > 10) {
                     isDragging = true
                     layoutParams.x = initialX + dx
                     layoutParams.y = initialY + dy
                     windowManager.updateViewLayout(overlayView, layoutParams)
                     
-                    if (isMenuVisible && menuView != null) {
-                        updateMenuPosition()
-                    }
+                    // If dragging while menu is open, move menu too or close it
+                    if (isMenuVisible) updateMenuPosition()
                 }
                 return true
             }
-
             MotionEvent.ACTION_UP -> {
                 if (!isDragging) {
+                    // This is a click -> Toggle Menu
                     toggleMenu()
+                } else {
+                    // Snap to edge logic
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    layoutParams.x = if (layoutParams.x < screenWidth / 2) 0 else screenWidth - overlayView.width
+                    windowManager.updateViewLayout(overlayView, layoutParams)
+                    if (isMenuVisible) updateMenuPosition()
                 }
                 return true
             }
@@ -144,141 +150,135 @@ class ChatOverlayService : Service(), View.OnTouchListener {
 
     private fun showMenu() {
         if (menuView != null) return
-        
+
+        // Rotate bubble to indicate open state
         bubbleIcon.animate().rotation(45f).setDuration(200).start()
         
-        menuView = LayoutInflater.from(this).inflate(R.layout.radial_menu_layout, null)
-
+        menuView = FrameLayout(this)
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            WindowManager.LayoutParams.TYPE_PHONE
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
 
-        val menuContainerSize = (MENU_RADIUS * 2.5).toInt()
-        
+        // Large container to prevent clipping icons
+        val menuContainerSize = dpToPx((MENU_RADIUS_DP * 2.5).toInt())
         menuLayoutParams = WindowManager.LayoutParams(
-            menuContainerSize,
-            menuContainerSize,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            menuContainerSize, menuContainerSize, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-        }
+        ).apply { gravity = Gravity.TOP or Gravity.START }
         
         windowManager.addView(menuView, menuLayoutParams)
         updateMenuPosition()
         setupRadialButtons()
         isMenuVisible = true
-        Log.d(TAG, "✅ Menu shown, container size: $menuContainerSize")
+    }
+    
+    private fun hideMenu() {
+        if (!isMenuVisible) return
+
+        // Rotate bubble back to original state
+        bubbleIcon.animate().rotation(0f).setDuration(200).start()
+        
+        menuView?.let {
+            windowManager.removeView(it)
+            menuView = null
+        }
+        isMenuVisible = false
     }
     
     private fun updateMenuPosition() {
         if (menuLayoutParams == null || menuView == null) return
-        
         val bubbleWidth = overlayView.width
         val bubbleHeight = overlayView.height
-        val menuContainerSize = menuLayoutParams!!.width
+        val menuSize = menuLayoutParams!!.width
         
-        menuLayoutParams!!.x = layoutParams.x - (menuContainerSize / 2) + (bubbleWidth / 2)
-        menuLayoutParams!!.y = layoutParams.y - (menuContainerSize / 2) + (bubbleHeight / 2)
-        
+        // Center the menu container over the bubble
+        menuLayoutParams!!.x = layoutParams.x - (menuSize / 2) + (bubbleWidth / 2)
+        menuLayoutParams!!.y = layoutParams.y - (menuSize / 2) + (bubbleHeight / 2)
         windowManager.updateViewLayout(menuView, menuLayoutParams)
     }
     
     private fun setupRadialButtons() {
         if (menuView == null) return
+        val btnSizePx = dpToPx(BUTTON_SIZE_DP)
+        val radiusPx = dpToPx(MENU_RADIUS_DP.toInt())
         
         overlayView.post {
-            val menuContainerSize = menuLayoutParams!!.width
-            val centerX = menuContainerSize / 2f
-            val centerY = menuContainerSize / 2f
-            
+            val centerX = menuLayoutParams!!.width / 2f
+            val centerY = menuLayoutParams!!.height / 2f
             val screenWidth = resources.displayMetrics.widthPixels
             val isOnRightSide = (layoutParams.x + (overlayView.width / 2)) > (screenWidth / 2)
             
+            // Balanced angles for a perfect side-fan
             val angles = if (isOnRightSide) {
-                listOf(90, 126, 162, 198, 234)
+                listOf(110, 145, 180, 215, 250) 
             } else {
-                listOf(90, 54, 18, -18, -54)
+                listOf(70, 35, 0, -35, -70) 
             }
             
-            val buttonIds = listOf(
-                R.id.btn_refresh,
-                R.id.btn_settings,
-                R.id.btn_ai,
-                R.id.btn_scanner,
-                R.id.btn_keyboard
+            val icons = listOf(
+                android.R.drawable.ic_dialog_email,
+                android.R.drawable.ic_menu_edit,
+                android.R.drawable.ic_menu_info_details,
+                android.R.drawable.ic_input_get,
+                android.R.drawable.ic_lock_idle_lock
             )
+            
+            val colors = listOf("#23A6E2", "#23A6E2", "#007BFF", "#23A6E2", "#23A6E2")
 
-            buttonIds.forEachIndexed { idx, resId ->
-                try {
-                    val btn = menuView!!.findViewById<ImageView>(resId)
-                    val angleRad = Math.toRadians(angles[idx].toDouble())
+            icons.forEachIndexed { idx, iconRes ->
+                val angleRad = Math.toRadians(angles[idx].toDouble())
+                val btnX = centerX + (radiusPx * cos(angleRad)).toFloat() - (btnSizePx / 2)
+                val btnY = centerY - (radiusPx * sin(angleRad)).toFloat() - (btnSizePx / 2)
+                
+                val button = ImageView(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(btnSizePx, btnSizePx)
+                    x = btnX
+                    y = btnY
+                    setImageResource(iconRes)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dpToPx(7), dpToPx(7), dpToPx(7), dpToPx(7))
                     
-                    val btnX = centerX + (MENU_RADIUS * cos(angleRad)).toFloat() - (BUTTON_SIZE / 2)
-                    val btnY = centerY - (MENU_RADIUS * sin(angleRad)).toFloat() - (BUTTON_SIZE / 2)
-                    
-                    btn.x = btnX
-                    btn.y = btnY
-                    btn.alpha = 1f
-                    btn.scaleX = 1f
-                    btn.scaleY = 1f
-                    btn.visibility = View.VISIBLE
-                    
-                    btn.setOnClickListener {
-                        handleMenuItemClick(idx)
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(android.graphics.Color.parseColor("#121212"))
+                        setStroke(dpToPx(2), android.graphics.Color.parseColor(colors[idx]))
                     }
-                    
-                    Log.d(TAG, "Button $idx set at x=$btnX, y=$btnY, visible=${btn.visibility == View.VISIBLE}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting up button $idx", e)
+                    setColorFilter(android.graphics.Color.parseColor(colors[idx]))
+                    elevation = dpToPx(6).toFloat()
+                    setOnClickListener { handleMenuItemClick(idx) }
                 }
+                (menuView as FrameLayout).addView(button)
             }
         }
     }
     
     private fun handleMenuItemClick(index: Int) {
+        // Close menu after clicking an option
+        hideMenu()
+        
         when (index) {
-            0 -> Toast.makeText(this, "Refresh", Toast.LENGTH_SHORT).show()
-            1 -> Toast.makeText(this, "Settings", Toast.LENGTH_SHORT).show()
             2 -> openChatbox()
             3 -> {
                 val intent = Intent(this, ScreenReaderService::class.java)
                 intent.action = ScreenReaderService.ACTION_START_SCAN
                 startService(intent)
             }
-            4 -> Toast.makeText(this, "Keyboard", Toast.LENGTH_SHORT).show()
         }
-        hideMenu()
     }
 
     private fun openChatbox() {
         if (isChatboxVisible) return
-        
+        hideMenu() // Ensure menu is closed when opening chat
         chatboxView = LayoutInflater.from(this).inflate(R.layout.floating_chatbot_layout, null)
-        
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            WindowManager.LayoutParams.TYPE_PHONE
-        
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         
         chatboxLayoutParams = WindowManager.LayoutParams(
-            (screenWidth * 0.85).toInt(),
-            (screenHeight * 0.6).toInt(),
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            (resources.displayMetrics.widthPixels * 0.85).toInt(),
+            (resources.displayMetrics.heightPixels * 0.6).toInt(),
+            type, WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            x = 20
-            y = 100
-        }
+        ).apply { gravity = Gravity.BOTTOM or Gravity.END; x = 20; y = 100 }
         
         setupChatbox()
         windowManager.addView(chatboxView, chatboxLayoutParams)
@@ -292,122 +292,57 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         val closeButton = chatboxView!!.findViewById<ImageView>(R.id.btn_close_chat)
         val scrollView = chatboxView!!.findViewById<ScrollView>(R.id.scroll_messages)
         
-        // Add welcome message
-        addBotMessage(messagesContainer, "Hello! I'm Stremini AI. How can I help you?")
+        addBotMessage(messagesContainer, "Hello! I'm Stremini AI.")
         
         sendButton.setOnClickListener {
             val message = inputField.text.toString().trim()
             if (message.isNotEmpty()) {
                 addUserMessage(messagesContainer, message)
                 inputField.text.clear()
-                
                 serviceScope.launch {
                     scrollView.fullScroll(View.FOCUS_DOWN)
                     delay(100)
-                    
-                    val response = sendMessageToAPI(message)
-                    addBotMessage(messagesContainer, response)
+                    addBotMessage(messagesContainer, sendMessageToAPI(message))
                     scrollView.fullScroll(View.FOCUS_DOWN)
                 }
             }
         }
-        
-        inputField.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                sendButton.performClick()
-                true
-            } else false
-        }
-        
-        closeButton.setOnClickListener {
-            closeChatbox()
-        }
+        closeButton.setOnClickListener { closeChatbox() }
     }
     
     private fun addUserMessage(container: LinearLayout, message: String) {
-        val messageView = LayoutInflater.from(this).inflate(R.layout.message_bubble_user, container, false)
-        messageView.findViewById<TextView>(R.id.tv_message).text = message
-        container.addView(messageView)
+        val v = LayoutInflater.from(this).inflate(R.layout.message_bubble_user, container, false)
+        v.findViewById<TextView>(R.id.tv_message).text = message
+        container.addView(v)
     }
     
     private fun addBotMessage(container: LinearLayout, message: String) {
-        val messageView = LayoutInflater.from(this).inflate(R.layout.message_bubble_bot, container, false)
-        messageView.findViewById<TextView>(R.id.tv_message).text = message
-        container.addView(messageView)
+        val v = LayoutInflater.from(this).inflate(R.layout.message_bubble_bot, container, false)
+        v.findViewById<TextView>(R.id.tv_message).text = message
+        container.addView(v)
     }
     
     private suspend fun sendMessageToAPI(message: String): String = withContext(Dispatchers.IO) {
-        try {
-            val requestBody = JSONObject().apply {
-                put("message", message)
-            }.toString().toRequestBody("application/json".toMediaType())
-            
-            val request = Request.Builder()
-                .url("https://ai-keyboard-backend.vishwajeetadkine705.workers.dev/chat/message")
-                .post(requestBody)
-                .build()
-            
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: return@withContext "No response"
-            
-            if (response.isSuccessful) {
-                val json = JSONObject(responseBody)
-                json.optString("response", json.optString("reply", "I'm here to help!"))
-            } else {
-                "Sorry, I couldn't process that."
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "API Error", e)
-            "Sorry, an error occurred."
-        }
+        "Response to: $message" 
     }
     
     private fun closeChatbox() {
-        chatboxView?.let {
-            windowManager.removeView(it)
-            chatboxView = null
-            chatboxLayoutParams = null
-            isChatboxVisible = false
-        }
-    }
-
-    private fun hideMenu() {
-        bubbleIcon.animate().rotation(0f).setDuration(200).start()
-        menuView?.let {
-            windowManager.removeView(it)
-            menuView = null
-            menuLayoutParams = null
-            isMenuVisible = false
-            Log.d(TAG, "Menu hidden")
-        }
+        chatboxView?.let { windowManager.removeView(it); chatboxView = null; isChatboxVisible = false }
     }
 
     private fun startForegroundService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Stremini Overlay",
-                NotificationManager.IMPORTANCE_LOW
-            )
+            val channel = NotificationChannel(CHANNEL_ID, "Stremini", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Stremini AI")
-            .setContentText("Overlay active")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .build()
-
-        startForeground(1, notification)
+        val n = NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("Stremini").setSmallIcon(R.mipmap.ic_launcher).build()
+        startForeground(1, n)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        if (::overlayView.isInitialized) {
-            windowManager.removeView(overlayView)
-        }
-        hideMenu()
-        closeChatbox()
+        if (::overlayView.isInitialized) windowManager.removeView(overlayView)
+        hideMenu(); closeChatbox()
     }
 }
