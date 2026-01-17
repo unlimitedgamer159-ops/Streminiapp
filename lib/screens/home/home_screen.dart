@@ -10,7 +10,15 @@ import '../../core/widgets/feature_card.dart';
 import '../../core/widgets/permission_card.dart';
 import '../../core/widgets/info_step.dart';
 import '../../controllers/home_controller.dart';
+import '../../services/keyboard_service.dart';
 import '../chat_screen.dart';
+
+// Add keyboard provider
+final keyboardServiceProvider = Provider<KeyboardService>((ref) => KeyboardService());
+final keyboardStatusProvider = FutureProvider<KeyboardStatus>((ref) async {
+  final service = ref.watch(keyboardServiceProvider);
+  return await service.checkKeyboardStatus();
+});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +31,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Check permissions on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(homeControllerProvider.notifier).checkPermissions();
     });
@@ -33,6 +40,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(homeControllerProvider);
     final controller = ref.read(homeControllerProvider.notifier);
+    final keyboardStatus = ref.watch(keyboardStatusProvider);
     
     ref.listen(homeControllerProvider, (previous, next) {
       if (next.errorMessage != null) {
@@ -62,6 +70,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(height: 16),
             
             _buildSmartChatbotCard(context, state, controller),
+            const SizedBox(height: 16),
+            
+            // AI Keyboard Card
+            keyboardStatus.when(
+              data: (status) => _buildKeyboardCard(context, status),
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
             const SizedBox(height: 16),
             
             _buildInfoCard(),
@@ -145,6 +161,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           icon: Icons.home,
           title: 'Home',
           onTap: () => Navigator.pop(context),
+        ),
+        AppDrawerItem(
+          icon: Icons.keyboard,
+          title: 'AI Keyboard',
+          onTap: () {
+            Navigator.pop(context);
+            ref.read(keyboardServiceProvider).openKeyboardSettingsActivity();
+          },
         ),
         AppDrawerItem(
           icon: Icons.settings,
@@ -278,6 +302,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildKeyboardCard(BuildContext context, KeyboardStatus status) {
+    final keyboardService = ref.read(keyboardServiceProvider);
+    
+    return FeatureCard(
+      title: 'AI-Powered Keyboard',
+      description: 'Smart typing with translation, completion & enhancement',
+      icon: Icons.keyboard,
+      iconColor: AppColors.secondary,
+      status: status.isActive ? 'Active' : status.isEnabled ? 'Enabled' : 'Disabled',
+      statusColor: status.isActive ? AppColors.success : status.isEnabled ? AppColors.warning : AppColors.lightGray,
+      badges: const [
+        'Translate',
+        'Complete',
+        'Enhance',
+        'Emoji',
+      ],
+      trailing: IconButton(
+        icon: const Icon(Icons.settings, color: AppColors.secondary),
+        onPressed: () => keyboardService.openKeyboardSettingsActivity(),
+      ),
+      onTap: () {
+        if (!status.isEnabled) {
+          keyboardService.openKeyboardSettings();
+        } else if (!status.isSelected) {
+          keyboardService.showKeyboardPicker();
+        } else {
+          keyboardService.openKeyboardSettingsActivity();
+        }
+      },
+    );
+  }
+
   Widget _buildInfoCard() {
     return AppContainer(
       padding: const EdgeInsets.all(16),
@@ -297,6 +353,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const InfoStep(number: '2', text: 'Toggle Smart Chatbot ON'),
           const InfoStep(number: '3', text: 'Tap the floating bubble to open menu'),
           const InfoStep(number: '4', text: 'Use Scanner icon to detect scams on screen'),
+          const InfoStep(number: '5', text: 'Enable AI Keyboard for smart typing', color: AppColors.secondary),
         ],
       ),
     );
