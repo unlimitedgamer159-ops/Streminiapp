@@ -33,9 +33,8 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         private const val TAG = "ChatOverlayService"
         private const val CHANNEL_ID = "stremini_overlay"
         private const val API_BASE_URL = "https://ai-keyboard-backend.vishwajeetadkine705.workers.dev"
-        
-        private const val MENU_RADIUS_DP = 95f
-        private const val BUTTON_SIZE_DP = 48
+        private const val MENU_RADIUS_DP = 110f
+        private const val BUTTON_SIZE_DP = 60
     }
 
     private lateinit var windowManager: WindowManager
@@ -50,13 +49,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     private var chatboxView: View? = null
     private var chatboxLayoutParams: WindowManager.LayoutParams? = null
     private var isChatboxVisible = false
-    // Chatbox dragging
-    private var chatInitialX = 0
-    private var chatInitialY = 0
-    private var chatInitialTouchX = 0f
-    private var chatInitialTouchY = 0f
-    private var isChatDragging = false
-
 
     private var initialX = 0
     private var initialY = 0
@@ -71,7 +63,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // Conversation history for context
     private val conversationHistory = mutableListOf<JSONObject>()
 
     private fun dpToPx(dp: Int): Int {
@@ -132,7 +123,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
                     layoutParams.x = initialX + dx
                     layoutParams.y = initialY + dy
                     windowManager.updateViewLayout(overlayView, layoutParams)
-                    
                     if (isMenuVisible) updateMenuPosition()
                 }
                 return true
@@ -204,19 +194,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         menuLayoutParams!!.y = layoutParams.y - (menuSize / 2) + (bubbleHeight / 2)
         windowManager.updateViewLayout(menuView, menuLayoutParams)
     }
-    private fun clampChatboxPosition() {
-       if (chatboxView == null || chatboxLayoutParams == null) return
-
-       val display = resources.displayMetrics
-       val maxX = display.widthPixels - chatboxView!!.width
-       val maxY = display.heightPixels - chatboxView!!.height
-
-       chatboxLayoutParams!!.x = chatboxLayoutParams!!.x.coerceIn(0, maxX)
-       chatboxLayoutParams!!.y = chatboxLayoutParams!!.y.coerceIn(0, maxY)
-
-       windowManager.updateViewLayout(chatboxView, chatboxLayoutParams)
-}
-
     
     private fun setupRadialButtons() {
         if (menuView == null) return
@@ -235,20 +212,39 @@ class ChatOverlayService : Service(), View.OnTouchListener {
                 listOf(70, 35, 0, -35, -70) 
             }
             
-            val icons = listOf(
-                android.R.drawable.ic_dialog_email,
-                android.R.drawable.ic_menu_edit,
-                android.R.drawable.ic_menu_info_details,
-                android.R.drawable.ic_input_get,
-                android.R.drawable.ic_lock_idle_lock
+            // Updated icons and actions - FIXED ORDER AND COLORS
+            val menuItems = listOf(
+                Triple(android.R.drawable.ic_menu_rotate, "#23A6E2") { 
+                    // Refresh/Clear - does nothing special
+                    hideMenu()
+                },
+                Triple(android.R.drawable.ic_menu_preferences, "#23A6E2") { 
+                    // Settings - opens main app
+                    hideMenu()
+                    openMainApp()
+                },
+                Triple(android.R.drawable.ic_dialog_info, "#007BFF") { 
+                    // Chat - opens chatbot
+                    hideMenu()
+                    openChatbox()
+                },
+                Triple(android.R.drawable.ic_menu_search, "#E040FB") { 
+                    // Scanner - starts screen scan (Purple/Cyan color)
+                    hideMenu()
+                    startScreenScan()
+                },
+                Triple(android.R.drawable.ic_menu_edit, "#0066FF") { 
+                    // Keyboard - opens keyboard settings
+                    hideMenu()
+                    openKeyboardSettings()
+                }
             )
-            
-            val colors = listOf("#23A6E2", "#23A6E2", "#007BFF", "#23A6E2", "#23A6E2")
 
-            icons.forEachIndexed { idx, iconRes ->
-                val angleRad = Math.toRadians(angles[idx].toDouble())
-                val btnX = centerX + (radiusPx * cos(angleRad)).toFloat() - (btnSizePx / 2)
-                val btnY = centerY - (radiusPx * sin(angleRad)).toFloat() - (btnSizePx / 2)
+            menuItems.forEachIndexed { idx, (iconRes, colorHex, action) ->
+                val angle = angles[idx]
+                val rad = Math.toRadians(angle.toDouble())
+                val btnX = centerX + (radiusPx * cos(rad)).toFloat() - (btnSizePx / 2)
+                val btnY = centerY - (radiusPx * sin(rad)).toFloat() - (btnSizePx / 2)
                 
                 val button = ImageView(this).apply {
                     layoutParams = FrameLayout.LayoutParams(btnSizePx, btnSizePx)
@@ -261,33 +257,58 @@ class ChatOverlayService : Service(), View.OnTouchListener {
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
                         setColor(android.graphics.Color.parseColor("#121212"))
-                        setStroke(dpToPx(2), android.graphics.Color.parseColor(colors[idx]))
+                        setStroke(dpToPx(2), android.graphics.Color.parseColor(colorHex))
                     }
-                    setColorFilter(android.graphics.Color.parseColor(colors[idx]))
+                    setColorFilter(android.graphics.Color.parseColor(colorHex))
                     elevation = dpToPx(6).toFloat()
-                    setOnClickListener { handleMenuItemClick(idx) }
+                    setOnClickListener { action() }
                 }
                 (menuView as FrameLayout).addView(button)
             }
         }
     }
     
-    private fun handleMenuItemClick(index: Int) {
-        hideMenu()
+    private fun openMainApp() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+    
+    private fun startScreenScan() {
+        val intent = Intent(this, ScreenReaderService::class.java)
+        intent.action = ScreenReaderService.ACTION_START_SCAN
+        startService(intent)
         
-        when (index) {
-            2 -> openChatbox()
-            3 -> {
-                val intent = Intent(this, ScreenReaderService::class.java)
-                intent.action = ScreenReaderService.ACTION_START_SCAN
-                startService(intent)
-            }
+        Toast.makeText(this, "Starting screen scan...", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun openKeyboardSettings() {
+        try {
+            // Always try to open system keyboard settings first (more reliable)
+            val intent = Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            
+            // Show helpful toast
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                Toast.makeText(
+                    this, 
+                    "Find and enable 'Stremini AI Keyboard'", 
+                    Toast.LENGTH_LONG
+                ).show()
+            }, 500)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening keyboard settings", e)
+            Toast.makeText(
+                this, 
+                "Please enable keyboard in Settings", 
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     private fun openChatbox() {
         if (isChatboxVisible) return
-        hideMenu()
         
         chatboxView = LayoutInflater.from(this).inflate(R.layout.floating_chatbot_layout, null)
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -300,7 +321,7 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply { 
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.BOTTOM or Gravity.END
             x = 20
             y = 100 
         }
@@ -311,47 +332,12 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     }
     
     private fun setupChatbox() {
-        val header = chatboxView!!.findViewById<View>(R.id.chat_header)
         val messagesContainer = chatboxView!!.findViewById<LinearLayout>(R.id.messages_container)
         val inputField = chatboxView!!.findViewById<EditText>(R.id.et_chat_input)
         val sendButton = chatboxView!!.findViewById<ImageView>(R.id.btn_send_message)
         val closeButton = chatboxView!!.findViewById<ImageView>(R.id.btn_close_chat)
         val scrollView = chatboxView!!.findViewById<ScrollView>(R.id.scroll_messages)
-        header.setOnTouchListener { _, event ->
-            when (event.action) {
-               MotionEvent.ACTION_DOWN -> {
-                   chatInitialX = chatboxLayoutParams!!.x
-                   chatInitialY = chatboxLayoutParams!!.y
-                   chatInitialTouchX = event.rawX
-                   chatInitialTouchY = event.rawY
-                   isChatDragging = false
-                   true
-        }
-
-               MotionEvent.ACTION_MOVE -> {
-                   val dx = (event.rawX - chatInitialTouchX).toInt()
-                   val dy = (event.rawY - chatInitialTouchY).toInt()
-
-                   if (abs(dx) > 8 || abs(dy) > 8) {
-                      isChatDragging = true
-                      chatboxLayoutParams!!.x = chatInitialX + dx
-                      chatboxLayoutParams!!.y = chatInitialY + dy
-                      windowManager.updateViewLayout(chatboxView, chatboxLayoutParams)
-            }
-                   true
-        }
-
-               MotionEvent.ACTION_UP -> {
-                  if (isChatDragging) clampChatboxPosition()
-                  true
-        }
-
-               else -> false
-    }
-}
-
         
-        // Add welcome message
         addBotMessage(messagesContainer, "Hello! I'm Stremini AI. How can I help you today?")
         
         sendButton.setOnClickListener {
@@ -388,24 +374,19 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     
     private suspend fun sendMessageToAPI(userMessage: String): String = withContext(Dispatchers.IO) {
         try {
-            // Add user message to history
             conversationHistory.add(JSONObject().apply {
                 put("role", "user")
                 put("content", userMessage)
             })
             
-            // Keep only last 10 messages for context
             if (conversationHistory.size > 10) {
                 conversationHistory.removeAt(0)
             }
             
-            // Prepare request body
             val requestJson = JSONObject().apply {
                 put("message", userMessage)
                 put("conversationHistory", JSONArray(conversationHistory))
             }
-            
-            Log.d(TAG, "Sending request: ${requestJson.toString(2)}")
             
             val requestBody = requestJson.toString()
                 .toRequestBody("application/json".toMediaType())
@@ -420,9 +401,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string()
             
-            Log.d(TAG, "Response code: ${response.code}")
-            Log.d(TAG, "Response body: $responseBody")
-            
             if (!response.isSuccessful) {
                 return@withContext "⚠️ Server error: ${response.code}. Please try again."
             }
@@ -431,21 +409,14 @@ class ChatOverlayService : Service(), View.OnTouchListener {
                 return@withContext "⚠️ Empty response from server."
             }
             
-            // Parse response
             val json = JSONObject(responseBody)
-            
-            // Try different possible response fields
             val reply = when {
                 json.has("response") -> json.getString("response")
                 json.has("reply") -> json.getString("reply")
                 json.has("message") -> json.getString("message")
-                else -> {
-                    Log.e(TAG, "Unknown response format: $responseBody")
-                    "⚠️ Unexpected response format from server."
-                }
+                else -> "⚠️ Unexpected response format from server."
             }
             
-            // Add bot response to history
             if (reply.isNotEmpty() && !reply.startsWith("⚠️")) {
                 conversationHistory.add(JSONObject().apply {
                     put("role", "assistant")
@@ -455,15 +426,6 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             
             reply
             
-        } catch (e: java.net.SocketTimeoutException) {
-            Log.e(TAG, "Timeout error", e)
-            "⚠️ Request timed out. Please check your internet connection."
-        } catch (e: java.net.UnknownHostException) {
-            Log.e(TAG, "Network error", e)
-            "⚠️ Cannot reach server. Please check your internet connection."
-        } catch (e: org.json.JSONException) {
-            Log.e(TAG, "JSON parsing error", e)
-            "⚠️ Error parsing server response: ${e.message}"
         } catch (e: Exception) {
             Log.e(TAG, "API error", e)
             "⚠️ Error: ${e.message ?: "Unknown error occurred"}"
@@ -506,4 +468,4 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         closeChatbox()
         conversationHistory.clear()
     }
-}             
+}
