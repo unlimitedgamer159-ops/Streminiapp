@@ -50,6 +50,13 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     private var chatboxView: View? = null
     private var chatboxLayoutParams: WindowManager.LayoutParams? = null
     private var isChatboxVisible = false
+    // Chatbox dragging
+    private var chatInitialX = 0
+    private var chatInitialY = 0
+    private var chatInitialTouchX = 0f
+    private var chatInitialTouchY = 0f
+    private var isChatDragging = false
+
 
     private var initialX = 0
     private var initialY = 0
@@ -197,6 +204,19 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         menuLayoutParams!!.y = layoutParams.y - (menuSize / 2) + (bubbleHeight / 2)
         windowManager.updateViewLayout(menuView, menuLayoutParams)
     }
+    private fun clampChatboxPosition() {
+       if (chatboxView == null || chatboxLayoutParams == null) return
+
+       val display = resources.displayMetrics
+       val maxX = display.widthPixels - chatboxView!!.width
+       val maxY = display.heightPixels - chatboxView!!.height
+
+       chatboxLayoutParams!!.x = chatboxLayoutParams!!.x.coerceIn(0, maxX)
+       chatboxLayoutParams!!.y = chatboxLayoutParams!!.y.coerceIn(0, maxY)
+
+       windowManager.updateViewLayout(chatboxView, chatboxLayoutParams)
+}
+
     
     private fun setupRadialButtons() {
         if (menuView == null) return
@@ -280,7 +300,7 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply { 
-            gravity = Gravity.BOTTOM or Gravity.END
+            gravity = Gravity.TOP or Gravity.START
             x = 20
             y = 100 
         }
@@ -291,11 +311,45 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     }
     
     private fun setupChatbox() {
+        val header = chatboxView!!.findViewById<View>(R.id.chat_header)
         val messagesContainer = chatboxView!!.findViewById<LinearLayout>(R.id.messages_container)
         val inputField = chatboxView!!.findViewById<EditText>(R.id.et_chat_input)
         val sendButton = chatboxView!!.findViewById<ImageView>(R.id.btn_send_message)
         val closeButton = chatboxView!!.findViewById<ImageView>(R.id.btn_close_chat)
         val scrollView = chatboxView!!.findViewById<ScrollView>(R.id.scroll_messages)
+        header.setOnTouchListener { _, event ->
+            when (event.action) {
+               MotionEvent.ACTION_DOWN -> {
+                   chatInitialX = chatboxLayoutParams!!.x
+                   chatInitialY = chatboxLayoutParams!!.y
+                   chatInitialTouchX = event.rawX
+                   chatInitialTouchY = event.rawY
+                   isChatDragging = false
+                   true
+        }
+
+               MotionEvent.ACTION_MOVE -> {
+                   val dx = (event.rawX - chatInitialTouchX).toInt()
+                   val dy = (event.rawY - chatInitialTouchY).toInt()
+
+                   if (abs(dx) > 8 || abs(dy) > 8) {
+                      isChatDragging = true
+                      chatboxLayoutParams!!.x = chatInitialX + dx
+                      chatboxLayoutParams!!.y = chatInitialY + dy
+                      windowManager.updateViewLayout(chatboxView, chatboxLayoutParams)
+            }
+                   true
+        }
+
+               MotionEvent.ACTION_UP -> {
+                  if (isChatDragging) clampChatboxPosition()
+                  true
+        }
+
+               else -> false
+    }
+}
+
         
         // Add welcome message
         addBotMessage(messagesContainer, "Hello! I'm Stremini AI. How can I help you today?")
