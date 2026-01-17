@@ -274,8 +274,8 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE
         
         chatboxLayoutParams = WindowManager.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.85).toInt(),
-            (resources.displayMetrics.heightPixels * 0.6).toInt(),
+            (resources.displayMetrics.widthPixels * 0.8).toInt(),
+            (resources.displayMetrics.heightPixels * 0.5).toInt(),
             type, 
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
