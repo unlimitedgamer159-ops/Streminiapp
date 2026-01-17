@@ -1,18 +1,14 @@
 package com.example.stremini_chatbot
 
-import android.animation.ObjectAnimator
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.cardview.widget.CardView
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -25,7 +21,6 @@ class StreminiIME : InputMethodService() {
     companion object {
         private const val TAG = "StreminiIME"
         private const val BASE_URL = "https://ai-keyboard-backend.vishwajeetadkine705.workers.dev"
-        
         var isActive = false
             private set
     }
@@ -40,8 +35,8 @@ class StreminiIME : InputMethodService() {
     // UI Components
     private lateinit var keyboardView: ViewGroup
     private lateinit var inputField: EditText
-    private lateinit var suggestionsBar: LinearLayout
-    private lateinit var quickActionsBar: LinearLayout
+    private lateinit var suggestionsBar: HorizontalScrollView
+    private lateinit var quickActionsBar: HorizontalScrollView
     private lateinit var loadingIndicator: ProgressBar
     
     // State
@@ -52,10 +47,7 @@ class StreminiIME : InputMethodService() {
 
     override fun onCreateInputView(): View {
         keyboardView = createModernKeyboardView()
-        
         isActive = true
-        notifyBubbleStateChange(true)
-        
         return keyboardView
     }
 
@@ -63,7 +55,7 @@ class StreminiIME : InputMethodService() {
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#000000"))
-            setPadding(0, 8, 0, 8)
+            setPadding(0, dpToPx(8), 0, dpToPx(8))
         }
 
         // Add AI Input Section
@@ -81,33 +73,37 @@ class StreminiIME : InputMethodService() {
         return mainLayout
     }
 
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+
     private fun createAIInputSection(): View {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 8, 12, 8)
+            setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8))
             gravity = Gravity.CENTER_VERTICAL
         }
 
         // Voice button
         val btnVoice = createIconButton(android.R.drawable.ic_btn_speak_now, "#23A6E2") {
-            showToast("Voice input coming soon")
+            Toast.makeText(this, "Voice input coming soon", Toast.LENGTH_SHORT).show()
         }
         container.addView(btnVoice)
 
-        // Input field container with modern design
+        // Input field container
         val inputContainer = CardView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 weight = 1f
-                setMargins(8, 0, 8, 0)
+                setMargins(dpToPx(8), 0, dpToPx(8), 0)
             }
-            radius = 24f
-            cardElevation = 4f
+            radius = dpToPx(24).toFloat()
+            cardElevation = dpToPx(4).toFloat()
             setCardBackgroundColor(Color.parseColor("#1A1A1A"))
         }
 
         val inputLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(16, 8, 16, 8)
+            setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8))
             gravity = Gravity.CENTER_VERTICAL
         }
 
@@ -127,7 +123,7 @@ class StreminiIME : InputMethodService() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: android.text.Editable?) {
                     val text = s?.toString() ?: ""
-                    if (text.isNotEmpty() && text.length > 2) {
+                    if (text.length > 2) {
                         getSuggestionsDebounced(text)
                     } else {
                         clearSuggestions()
@@ -137,10 +133,10 @@ class StreminiIME : InputMethodService() {
         }
 
         loadingIndicator = ProgressBar(this, null, android.R.attr.progressBarStyleSmall).apply {
-            layoutParams = LinearLayout.LayoutParams(24, 24).apply {
-                setMargins(8, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(24), dpToPx(24)).apply {
+                setMargins(dpToPx(8), 0, 0, 0)
             }
-            indeterminateDrawable.setColorFilter(
+            indeterminateDrawable?.setColorFilter(
                 Color.parseColor("#23A6E2"),
                 android.graphics.PorterDuff.Mode.SRC_IN
             )
@@ -162,43 +158,43 @@ class StreminiIME : InputMethodService() {
     }
 
     private fun createSuggestionsBar(): HorizontalScrollView {
-        val scrollView = HorizontalScrollView(this).apply {
+        suggestionsBar = HorizontalScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 8, 0, 8)
+                setMargins(0, dpToPx(8), 0, dpToPx(8))
             }
             isHorizontalScrollBarEnabled = false
         }
 
-        suggestionsBar = LinearLayout(this).apply {
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 0, 12, 0)
+            setPadding(dpToPx(12), 0, dpToPx(12), 0)
         }
 
-        scrollView.addView(suggestionsBar)
-        return scrollView
+        suggestionsBar.addView(container)
+        return suggestionsBar
     }
 
     private fun createQuickActionsBar(): HorizontalScrollView {
-        val scrollView = HorizontalScrollView(this).apply {
+        quickActionsBar = HorizontalScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 8, 0, 8)
+                setMargins(0, dpToPx(8), 0, dpToPx(8))
             }
             isHorizontalScrollBarEnabled = false
         }
 
-        quickActionsBar = LinearLayout(this).apply {
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 0, 12, 0)
+            setPadding(dpToPx(12), 0, dpToPx(12), 0)
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // Add AI action buttons
+        // AI action buttons matching the screenshot
         val actions = listOf(
             Triple("✨", "Complete", ::handleComplete),
             Triple("✓", "Correct", ::handleCorrect),
@@ -209,29 +205,27 @@ class StreminiIME : InputMethodService() {
         )
 
         actions.forEach { (icon, label, action) ->
-            quickActionsBar.addView(createAIActionButton(icon, label, action))
+            container.addView(createAIActionButton(icon, label, action))
         }
 
-        scrollView.addView(quickActionsBar)
-        return scrollView
+        quickActionsBar.addView(container)
+        return quickActionsBar
     }
 
     private fun createAIActionButton(icon: String, label: String, action: () -> Unit): View {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(8, 8, 8, 8)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(4, 0, 4, 0)
+                setMargins(dpToPx(4), 0, dpToPx(4), 0)
             }
             
-            // Ripple effect
             isClickable = true
             isFocusable = true
-            background = createRippleDrawable()
             
             setOnClickListener {
                 animateClick(this)
@@ -243,8 +237,7 @@ class StreminiIME : InputMethodService() {
             text = icon
             textSize = 20f
             gravity = Gravity.CENTER
-            setPadding(12, 12, 12, 12)
-            setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
+            setPadding(dpToPx(12), dpToPx(12), dpToPx(12), dpToPx(12))
             background = createCircleGradientDrawable()
         }
 
@@ -253,7 +246,7 @@ class StreminiIME : InputMethodService() {
             textSize = 10f
             setTextColor(Color.parseColor("#AAAAAA"))
             gravity = Gravity.CENTER
-            setPadding(0, 4, 0, 0)
+            setPadding(0, dpToPx(4), 0, 0)
         }
 
         container.addView(iconText)
@@ -265,7 +258,7 @@ class StreminiIME : InputMethodService() {
     private fun createKeyboardSection(): View {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(8, 8, 8, 8)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
         }
 
         // Number row
@@ -277,30 +270,22 @@ class StreminiIME : InputMethodService() {
         // Middle row
         container.addView(createKeyRow(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"), 0.5f))
         
-        // Bottom row with shift and backspace
+        // Bottom row
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 4, 0, 4)
+                setMargins(0, dpToPx(4), 0, dpToPx(4))
             }
         }
 
-        // Shift key
-        bottomRow.addView(createSpecialKey("⇧", 1.5f) {
-            // Toggle shift
-        })
-
+        bottomRow.addView(createSpecialKey("⇧", 1.5f) {})
         listOf("z", "x", "c", "v", "b", "n", "m").forEach { key ->
             bottomRow.addView(createKey(key))
         }
-
-        // Backspace key
-        bottomRow.addView(createSpecialKey("⌫", 1.5f) {
-            deleteText()
-        })
+        bottomRow.addView(createSpecialKey("⌫", 1.5f) { deleteText() })
 
         container.addView(bottomRow)
 
@@ -311,29 +296,15 @@ class StreminiIME : InputMethodService() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 4, 0, 0)
+                setMargins(0, dpToPx(4), 0, 0)
             }
         }
 
-        spaceRow.addView(createSpecialKey("?123", 1.2f) {
-            // Toggle numbers/symbols
-        })
-        
-        spaceRow.addView(createSpecialKey(",", 1f) {
-            commitText(",")
-        })
-        
-        spaceRow.addView(createSpecialKey("Space", 4f) {
-            commitText(" ")
-        })
-        
-        spaceRow.addView(createSpecialKey(".", 1f) {
-            commitText(".")
-        })
-        
-        spaceRow.addView(createSpecialKey("↵", 1.5f) {
-            sendDefaultEditorAction(true)
-        })
+        spaceRow.addView(createSpecialKey("?123", 1.2f) {})
+        spaceRow.addView(createSpecialKey(",", 1f) { commitText(",") })
+        spaceRow.addView(createSpecialKey("Space", 4f) { commitText(" ") })
+        spaceRow.addView(createSpecialKey(".", 1f) { commitText(".") })
+        spaceRow.addView(createSpecialKey("↵", 1.5f) { sendDefaultEditorAction(true) })
 
         container.addView(spaceRow)
 
@@ -347,27 +318,21 @@ class StreminiIME : InputMethodService() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 4, 0, 4)
+                setMargins(0, dpToPx(4), 0, dpToPx(4))
             }
         }
 
         if (startWeight > 0) {
             row.addView(Space(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, 1).apply {
-                    weight = startWeight
-                }
+                layoutParams = LinearLayout.LayoutParams(0, 1).apply { weight = startWeight }
             })
         }
 
-        keys.forEach { key ->
-            row.addView(createKey(key))
-        }
+        keys.forEach { key -> row.addView(createKey(key)) }
 
         if (startWeight > 0) {
             row.addView(Space(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, 1).apply {
-                    weight = startWeight
-                }
+                layoutParams = LinearLayout.LayoutParams(0, 1).apply { weight = startWeight }
             })
         }
 
@@ -380,13 +345,12 @@ class StreminiIME : InputMethodService() {
             textSize = 18f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, 120).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(120)).apply {
                 weight = 1f
-                setMargins(2, 2, 2, 2)
+                setMargins(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
             }
             background = createKeyBackgroundDrawable()
             isClickable = true
-            isFocusable = true
             
             setOnClickListener {
                 animateKeyPress(this)
@@ -402,13 +366,12 @@ class StreminiIME : InputMethodService() {
             textSize = 16f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, 120).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dpToPx(120)).apply {
                 this.weight = weight
-                setMargins(2, 2, 2, 2)
+                setMargins(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2))
             }
             background = createSpecialKeyBackgroundDrawable()
             isClickable = true
-            isFocusable = true
             
             setOnClickListener {
                 animateKeyPress(this)
@@ -421,12 +384,12 @@ class StreminiIME : InputMethodService() {
         return ImageButton(this).apply {
             setImageResource(icon)
             setColorFilter(Color.parseColor(color))
-            layoutParams = LinearLayout.LayoutParams(48, 48).apply {
-                setMargins(4, 0, 4, 0)
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48)).apply {
+                setMargins(dpToPx(4), 0, dpToPx(4), 0)
             }
             background = createCircleGradientDrawable()
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(8, 8, 8, 8)
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
             
             setOnClickListener {
                 animateClick(this)
@@ -435,81 +398,43 @@ class StreminiIME : InputMethodService() {
         }
     }
 
-    // Drawable creators
     private fun createKeyBackgroundDrawable() = android.graphics.drawable.GradientDrawable().apply {
         shape = android.graphics.drawable.GradientDrawable.RECTANGLE
         setColor(Color.parseColor("#1A1A1A"))
-        cornerRadius = 12f
+        cornerRadius = dpToPx(12).toFloat()
         setStroke(1, Color.parseColor("#333333"))
     }
 
     private fun createSpecialKeyBackgroundDrawable() = android.graphics.drawable.GradientDrawable().apply {
         shape = android.graphics.drawable.GradientDrawable.RECTANGLE
         setColor(Color.parseColor("#2A2A2A"))
-        cornerRadius = 12f
+        cornerRadius = dpToPx(12).toFloat()
         setStroke(1, Color.parseColor("#444444"))
     }
 
     private fun createCircleGradientDrawable() = android.graphics.drawable.GradientDrawable().apply {
         shape = android.graphics.drawable.GradientDrawable.OVAL
-        colors = intArrayOf(
-            Color.parseColor("#23A6E2"),
-            Color.parseColor("#0066FF")
-        )
+        colors = intArrayOf(Color.parseColor("#23A6E2"), Color.parseColor("#0066FF"))
     }
 
-    private fun createRippleDrawable(): android.graphics.drawable.Drawable {
-        val shape = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = 12f
-            setColor(Color.TRANSPARENT)
-        }
-        return android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(Color.parseColor("#3323A6E2")),
-            shape,
-            null
-        )
-    }
-
-    // Animations
     private fun animateKeyPress(view: View) {
-        val scaleDown = ObjectAnimator.ofFloat(view, "scaleX", 1f, 0.9f)
-        val scaleUp = ObjectAnimator.ofFloat(view, "scaleX", 0.9f, 1f)
-        scaleDown.duration = 50
-        scaleUp.duration = 50
-        scaleDown.interpolator = AccelerateDecelerateInterpolator()
-        scaleUp.interpolator = AccelerateDecelerateInterpolator()
-        
-        scaleDown.start()
-        scaleDown.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: android.animation.Animator) {
-                scaleUp.start()
-            }
-        })
+        view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
+        }.start()
     }
 
     private fun animateClick(view: View) {
-        view.animate()
-            .scaleX(0.9f)
-            .scaleY(0.9f)
-            .setDuration(100)
-            .withEndAction {
-                view.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(100)
-                    .start()
-            }
-            .start()
+        view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).withEndAction {
+            view.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+        }.start()
     }
 
-    // AI Functions
     private var suggestionsJob: Job? = null
 
     private fun getSuggestionsDebounced(text: String) {
         suggestionsJob?.cancel()
         suggestionsJob = serviceScope.launch {
-            delay(500) // Debounce
+            delay(500)
             getSuggestions(text)
         }
     }
@@ -558,7 +483,8 @@ class StreminiIME : InputMethodService() {
     }
 
     private fun displaySuggestions(suggestions: List<String>) {
-        suggestionsBar.removeAllViews()
+        val container = (suggestionsBar.getChildAt(0) as LinearLayout)
+        container.removeAllViews()
         currentSuggestions = suggestions
         
         suggestions.forEach { suggestion ->
@@ -566,12 +492,12 @@ class StreminiIME : InputMethodService() {
                 text = suggestion
                 textSize = 14f
                 setTextColor(Color.WHITE)
-                setPadding(20, 10, 20, 10)
+                setPadding(dpToPx(20), dpToPx(10), dpToPx(20), dpToPx(10))
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    setMargins(4, 0, 4, 0)
+                    setMargins(dpToPx(4), 0, dpToPx(4), 0)
                 }
                 background = createSuggestionChipDrawable()
                 isClickable = true
@@ -582,14 +508,13 @@ class StreminiIME : InputMethodService() {
                     clearSuggestions()
                 }
             }
-            
-            suggestionsBar.addView(chip)
+            container.addView(chip)
         }
     }
 
     private fun createSuggestionChipDrawable() = android.graphics.drawable.GradientDrawable().apply {
         shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-        cornerRadius = 20f
+        cornerRadius = dpToPx(20).toFloat()
         colors = intArrayOf(
             Color.parseColor("#1A23A6E2"),
             Color.parseColor("#1A0066FF")
@@ -598,7 +523,8 @@ class StreminiIME : InputMethodService() {
     }
 
     private fun clearSuggestions() {
-        suggestionsBar.removeAllViews()
+        val container = (suggestionsBar.getChildAt(0) as LinearLayout)
+        container.removeAllViews()
         currentSuggestions = emptyList()
     }
 
@@ -842,7 +768,6 @@ class StreminiIME : InputMethodService() {
         builder.show()
     }
 
-    // Input methods
     private fun commitText(text: String) {
         currentInputConnection?.commitText(text, 1)
     }
@@ -867,16 +792,6 @@ class StreminiIME : InputMethodService() {
         }
     }
 
-    private fun showToast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun notifyBubbleStateChange(active: Boolean) {
-        val intent = android.content.Intent("com.example.stremini_chatbot.KEYBOARD_STATE_CHANGED")
-        intent.putExtra("isActive", active)
-        sendBroadcast(intent)
-    }
-
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         
@@ -895,6 +810,5 @@ class StreminiIME : InputMethodService() {
         super.onDestroy()
         serviceScope.cancel()
         isActive = false
-        notifyBubbleStateChange(false)
     }
 }
