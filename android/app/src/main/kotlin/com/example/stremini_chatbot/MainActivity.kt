@@ -8,8 +8,9 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
-import android.util.Log // <--- MISSING IMPORT ADDED HERE
+import android.util.Log
 import android.widget.Toast
+import android.view.inputmethod.InputMethodManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -18,6 +19,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channelName = "stremini.chat.overlay"
     private val eventChannelName = "stremini.chat.overlay/events"
+    private val keyboardChannelName = "stremini.keyboard"
     
     private var eventSink: EventChannel.EventSink? = null
 
@@ -47,6 +49,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
+        // Existing overlay channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasOverlayPermission" -> result.success(hasOverlayPermission())
@@ -74,6 +77,28 @@ class MainActivity : FlutterActivity() {
                 "stopOverlayService" -> {
                     val intent = Intent(this, ChatOverlayService::class.java)
                     stopService(intent)
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // New keyboard channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, keyboardChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isKeyboardEnabled" -> result.success(isKeyboardEnabled())
+                "isKeyboardSelected" -> result.success(isKeyboardSelected())
+                "openKeyboardSettings" -> {
+                    openKeyboardSettings()
+                    result.success(true)
+                }
+                "showKeyboardPicker" -> {
+                    showKeyboardPicker()
+                    result.success(true)
+                }
+                "openKeyboardSettingsActivity" -> {
+                    val intent = Intent(this, KeyboardSettingsActivity::class.java)
+                    startActivity(intent)
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -151,6 +176,43 @@ class MainActivity : FlutterActivity() {
             action = ScreenReaderService.ACTION_START_SCAN
         }
         startService(intent)
+    }
+
+    // Keyboard-related methods
+    private fun isKeyboardEnabled(): Boolean {
+        val imeManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        val enabledInputMethods = imeManager.enabledInputMethodList
+        val packageName = packageName
+        
+        return enabledInputMethods.any { 
+            it.packageName == packageName 
+        }
+    }
+
+    private fun isKeyboardSelected(): Boolean {
+        val currentInputMethod = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD
+        )
+        
+        return currentInputMethod?.contains(packageName) == true
+    }
+
+    private fun openKeyboardSettings() {
+        val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        
+        Toast.makeText(
+            this,
+            "Find 'Stremini AI Keyboard' and enable it",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun showKeyboardPicker() {
+        val imeManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imeManager.showInputMethodPicker()
     }
 
     override fun onResume() {
