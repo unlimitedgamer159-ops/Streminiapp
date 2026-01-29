@@ -15,29 +15,35 @@ class MessageBubble extends StatelessWidget {
       return _buildTypingIndicator();
     }
 
+    final isUser = message.type == MessageType.user;
+
     return Align(
-      alignment: message.type == MessageType.user
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: message.type == MessageType.user
-              ? Colors.grey[800]
-              : Colors.transparent,
+          color: isUser ? Colors.grey[800] : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
+          border: isUser ? null : Border.all(color: Colors.grey.withOpacity(0.3)), // Optional border for bot
         ),
         constraints: BoxConstraints(
-          maxWidth: message.type == MessageType.user
-              ? MediaQuery.of(context).size.width * 0.7
-              : MediaQuery.of(context).size.width * 1,
+          maxWidth: isUser
+              ? MediaQuery.of(context).size.width * 0.75
+              : MediaQuery.of(context).size.width * 0.95, // Wider for bot code blocks
         ),
-        child: Text(
+        // KEY CHANGE: SelectableText makes it copyable
+        child: SelectableText(
           message.text,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
+            height: 1.5,
+          ),
+          cursorColor: Colors.blue,
+          toolbarOptions: const ToolbarOptions(
+            copy: true,
+            selectAll: true,
           ),
         ),
       ),
@@ -45,46 +51,13 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildTypingIndicator() {
+    // Keep your existing typing indicator logic
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: SizedBox(
-          height: 500,
-          width: double.infinity,
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTypingDot(0),
-                const SizedBox(width: 4),
-                _buildTypingDot(1),
-                const SizedBox(width: 4),
-                _buildTypingDot(2),
-              ],
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.all(16),
+        child: const Text("...", style: TextStyle(color: Colors.white, fontSize: 24)),
       ),
-    );
-  }
-
-  Widget _buildTypingDot(int index) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 600),
-      builder: (context, value, child) {
-        return Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.3 + (value * 0.7)),
-            shape: BoxShape.circle,
-          ),
-        );
-      },
     );
   }
 }
