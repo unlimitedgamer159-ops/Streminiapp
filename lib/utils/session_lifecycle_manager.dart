@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';
 
-/// SessionLifecycleManager handles automatic session cleanup
-/// when the app is closed or goes to background
 class SessionLifecycleManager extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -28,7 +26,6 @@ class _SessionLifecycleManagerState extends ConsumerState<SessionLifecycleManage
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // Clear session when app is disposed
     _clearSessionOnDispose();
     super.dispose();
   }
@@ -45,13 +42,6 @@ class _SessionLifecycleManagerState extends ConsumerState<SessionLifecycleManage
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
-    // Optional: Clear session when app goes to background
-    // Uncomment if you want session to end on background
-    // if (state == AppLifecycleState.paused) {
-    //   ref.read(apiServiceProvider).clearSession();
-    // }
-    
-    // Clear session when app is detached (closed)
     if (state == AppLifecycleState.detached) {
       ref.read(apiServiceProvider).clearSession();
     }
