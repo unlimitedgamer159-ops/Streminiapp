@@ -8,6 +8,9 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
 
   @override
   FutureOr<List<Message>> build() {
+    // Initialize session when chat starts
+    ref.read(apiServiceProvider).initSession();
+    
     return [
       Message(
         id: _initialGreetingId,
@@ -76,6 +79,19 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
   void removeTypingIndicator() {
     final current = state.value ?? <Message>[];
     state = AsyncValue.data(current.where((m) => m.type != MessageType.typing).toList());
+  }
+
+  // Clear session when chat is cleared
+  Future<void> clearChat() async {
+    await ref.read(apiServiceProvider).clearSession();
+    state = AsyncValue.data([
+      Message(
+        id: _initialGreetingId,
+        text: "Hello! I'm Stremini AI. How can I help you today?",
+        type: MessageType.bot,
+        timestamp: DateTime.now(),
+      )
+    ]);
   }
 }
 
