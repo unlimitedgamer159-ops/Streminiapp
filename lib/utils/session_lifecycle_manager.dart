@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/api_service.dart';
+import '../providers/chat_provider.dart';
 
 class SessionLifecycleManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -26,24 +26,16 @@ class _SessionLifecycleManagerState extends ConsumerState<SessionLifecycleManage
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _clearSessionOnDispose();
     super.dispose();
-  }
-
-  Future<void> _clearSessionOnDispose() async {
-    try {
-      await ref.read(apiServiceProvider).clearSession();
-    } catch (e) {
-      debugPrint('Error clearing session on dispose: $e');
-    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
+    // Clear chat UI when app is killed/detached
     if (state == AppLifecycleState.detached) {
-      ref.read(apiServiceProvider).clearSession();
+      ref.read(chatNotifierProvider.notifier).clearChat();
     }
   }
 
