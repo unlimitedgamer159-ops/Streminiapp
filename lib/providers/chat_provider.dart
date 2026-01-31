@@ -8,8 +8,6 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
 
   @override
   FutureOr<List<Message>> build() {
-    ref.read(apiServiceProvider).initSession();
-    
     return [
       Message(
         id: _initialGreetingId,
@@ -18,6 +16,34 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
         timestamp: DateTime.now(),
       )
     ];
+  }
+
+  // FIXED: Increased limit to 100 messages (approx 50 conversation turns)
+  List<Map<String, dynamic>> _getHistory() {
+    final currentMessages = state.value ?? [];
+    List<Map<String, dynamic>> history = [];
+
+    for (var msg in currentMessages) {
+      // Skip greeting, typing indicators, and error messages
+      if (msg.id == _initialGreetingId || 
+          msg.type == MessageType.typing || 
+          msg.text.startsWith('❌') || 
+          msg.text.startsWith('⚠️')) {
+        continue;
+      }
+
+      String role = msg.type == MessageType.user ? 'user' : 'assistant';
+      history.add({
+        "role": role,
+        "content": msg.text
+      });
+    }
+
+    // Keep the last 100 messages for context
+    if (history.length > 100) {
+      history = history.sublist(history.length - 100);
+    }
+    return history;
   }
 
   Future<void> sendMessage(String text, {String? attachment, String? mimeType, String? fileName}) async {
@@ -33,6 +59,10 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
       timestamp: DateTime.now(),
     );
 
+    // 1. Capture history BEFORE adding new message (So we send: Past Context + New Question)
+    final history = _getHistory();
+
+    // 2. Update UI
     final current = state.value ?? <Message>[];
     final filtered = current.where((m) => m.id != _initialGreetingId).toList();
     state = AsyncValue.data([...filtered, userMessage]);
@@ -41,7 +71,15 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
 
     try {
       final api = ref.read(apiServiceProvider);
-      final reply = await api.sendMessage(trimmed, attachment: attachment, mimeType: mimeType, fileName: fileName);
+      
+      // 3. Send Message WITH Long History
+      final reply = await api.sendMessage(
+        trimmed, 
+        attachment: attachment, 
+        mimeType: mimeType, 
+        fileName: fileName,
+        history: history 
+      );
 
       removeTypingIndicator();
 
@@ -58,7 +96,7 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
       state = AsyncValue.data([...(state.value ?? []), 
         Message(
           id: DateTime.now().toString(), 
-          text: 'Error: $e', 
+          text: '⚠️ Error: $e', 
           type: MessageType.bot, 
           timestamp: DateTime.now()
         )
@@ -78,7 +116,6 @@ class ChatNotifier extends AsyncNotifier<List<Message>> {
   }
 
   Future<void> clearChat() async {
-    await ref.read(apiServiceProvider).clearSession();
     state = AsyncValue.data([
       Message(
         id: _initialGreetingId,
