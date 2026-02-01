@@ -4,8 +4,7 @@ import 'package:stremini_chatbot/screens/chat_screen.dart';
 import 'package:stremini_chatbot/widgets/draggable_chat_icon.dart';
 
 import '../providers/chat_window_state_provider.dart';
-
-
+import '../providers/scanner_provider.dart';
 
 class ChatOverlayManager extends ConsumerStatefulWidget {
   final Widget child;
@@ -48,6 +47,7 @@ class _ChatOverlayManagerState extends ConsumerState<ChatOverlayManager> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatWindowStateProvider);
+    final scannerState = ref.watch(scannerStateProvider);
     final isMaximized = state.overlayMode == "maximized";
 
     return Stack(
@@ -57,18 +57,18 @@ class _ChatOverlayManagerState extends ConsumerState<ChatOverlayManager> {
         widget.child,
 
         // 2. The Floating Chat Icon Layer
-        // 🛑 CRITICAL FIX: We use Positioned.fill here.
-        // This forces the DraggableChatIcon to take up the entire screen space,
-        // so it knows where "left: 20, top: 200" actually is.
-       // 2. The Floating Chat Icon/Menu
-      if (!isMaximized)
-          Positioned.fill(
+        // IgnorePointer wrapping with ignoring: true means touches pass through
+        // by default, but the DraggableChatIcon will handle its own gestures
+        if (!isMaximized)
+          IgnorePointer(
+            ignoring: true,
             child: DraggableChatIcon(
               position: _bubblePosition,
               onDragEnd: updatePosition,
               overlayMode: state.overlayMode,
               onTapMain: cycleOverlayMode,
               onOpenApp: openMaximizedChat,
+              isScannerActive: scannerState.isActive,
             ),
           ),
 

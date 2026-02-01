@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content">
 
     <!-- Main Bubble Icon - HIGH QUALITY -->
@@ -8,7 +8,7 @@
         android:id="@+id/bubble_icon"
         android:layout_width="60dp"
         android:layout_height="60dp"
-        android:background="@drawable/glow_gradient_ring"
+        android:background="@drawable/glow_gradient_ring" 
         android:src="@drawable/new_logo"
         android:padding="15dp"
         android:contentDescription="Chat Head"
@@ -52,7 +52,7 @@
         android:contentDescription="Screen Scanner"
         android:layout_gravity="center"
         android:elevation="10dp"
-        android:tint="#FFFFFF"
+        android:tint="#FFFFFF" 
         android:scaleType="fitCenter"
         android:adjustViewBounds="true"
         android:visibility="gone"

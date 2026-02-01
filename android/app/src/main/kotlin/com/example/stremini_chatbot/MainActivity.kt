@@ -49,6 +49,19 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
+        // Scanner method channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.stremini_chatbot").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "startScanner" -> {
+                    result.success(true)
+                }
+                "stopScanner" -> {
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        
         // Overlay channel for bubble controls
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {

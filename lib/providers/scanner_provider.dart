@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 class ScreenScannerController {
-  static const MethodChannel _channel = MethodChannel('stremini.screen.scanner');
+  static const MethodChannel _channel =
+      MethodChannel('stremini.screen.scanner');
 
   Future<bool> hasAccessibilityPermission() async {
     if (!Platform.isAndroid) return false;
     try {
-      final bool? has = await _channel.invokeMethod<bool>('hasAccessibilityPermission');
+      final bool? has =
+          await _channel.invokeMethod<bool>('hasAccessibilityPermission');
       return has ?? false;
     } catch (e) {
       return false;
@@ -83,9 +85,20 @@ class ScannerState {
 
 class ScannerStateNotifier extends StateNotifier<ScannerState> {
   final ScreenScannerController _controller;
+  late Future<void>? _statusCheckFuture;
 
   ScannerStateNotifier(this._controller) : super(ScannerState()) {
     _checkPermission();
+    _startStatusChecking();
+  }
+
+  void _startStatusChecking() {
+    // Periodically check if scanning is still active
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 2));
+      await checkScanningStatus();
+      return true; // Continue looping
+    });
   }
 
   Future<void> _checkPermission() async {
@@ -139,6 +152,7 @@ final screenScannerControllerProvider = Provider<ScreenScannerController>(
   (ref) => ScreenScannerController(),
 );
 
-final scannerStateProvider = StateNotifierProvider<ScannerStateNotifier, ScannerState>(
+final scannerStateProvider =
+    StateNotifierProvider<ScannerStateNotifier, ScannerState>(
   (ref) => ScannerStateNotifier(ref.watch(screenScannerControllerProvider)),
 );

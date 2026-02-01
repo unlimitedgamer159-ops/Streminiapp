@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/keyboard_service.dart';
+import '../providers/scanner_provider.dart';
 
 /// --------------------------------------------------------------
 /// 🔵🟣 GLOW BUTTON (matches the screenshot UI)
@@ -9,12 +11,14 @@ class GlowCircleButton extends StatelessWidget {
   final IconData icon;
   final double size;
   final VoidCallback onTap;
+  final bool isActive;
 
   const GlowCircleButton({
     super.key,
     required this.icon,
     required this.onTap,
     this.size = 70,
+    this.isActive = false,
   });
 
   @override
@@ -24,23 +28,37 @@ class GlowCircleButton extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.white,
-              blurRadius: 3,
-              spreadRadius: 1,
-            ),
-          ],
+          boxShadow: isActive
+              ? [
+                  const BoxShadow(
+                    color: Colors.white,
+                    blurRadius: 3,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.3),
+                    blurRadius: 2,
+                    spreadRadius: 0,
+                  ),
+                ],
         ),
         child: Padding(
           padding: const EdgeInsets.all(5),
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.black,
+              border: isActive
+                  ? Border.all(
+                      color: Colors.white.withOpacity(0.5),
+                      width: 1,
+                    )
+                  : null,
             ),
             child: Icon(
               icon,
@@ -63,6 +81,7 @@ class DraggableChatIcon extends ConsumerStatefulWidget {
   final String overlayMode;
   final VoidCallback onTapMain;
   final VoidCallback onOpenApp;
+  final bool isScannerActive;
 
   const DraggableChatIcon({
     super.key,
@@ -71,6 +90,7 @@ class DraggableChatIcon extends ConsumerStatefulWidget {
     required this.overlayMode,
     required this.onTapMain,
     required this.onOpenApp,
+    this.isScannerActive = false,
   });
 
   @override
@@ -144,11 +164,18 @@ class _DraggableChatIconState extends ConsumerState<DraggableChatIcon>
         (_currentPosition.dx + (_iconSize / 2)) > (screenWidth / 2);
 
     // Icons in your radial menu
+    final keyboardService = KeyboardService();
     final List<Map<String, dynamic>> icons = [
       {'icon': Icons.message, 'action': () {}},
       {'icon': Icons.settings, 'action': () {}},
       {'icon': Icons.memory, 'action': () {}},
-      {'icon': Icons.keyboard, 'action': () {}},
+      {
+        'icon': Icons.keyboard,
+        'action': () {
+          // Open system input method / keyboard settings (Android)
+          keyboardService.openKeyboardSettingsActivity();
+        }
+      },
       {'icon': Icons.shield, 'action': () {}},
     ];
     double startAngle;
@@ -190,6 +217,7 @@ class _DraggableChatIconState extends ConsumerState<DraggableChatIcon>
                   icon: icons[index]['icon'],
                   size: 55,
                   onTap: () => icons[index]['action'](),
+                  isActive: false,
                 ),
               ),
             );
@@ -209,50 +237,57 @@ class _DraggableChatIconState extends ConsumerState<DraggableChatIcon>
     return Positioned(
       left: _currentPosition.dx,
       top: _currentPosition.dy,
-      child: Material(
-        color: Colors.transparent,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            if (isRadial)
-              SizedBox(
-                width: _iconSize,
-                height: _iconSize,
-                child: _buildRadialIcons(context),
-              ),
+      child: AbsorbPointer(
+        absorbing: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              if (isRadial)
+                IgnorePointer(
+                  child: SizedBox(
+                    width: _iconSize,
+                    height: _iconSize,
+                    child: _buildRadialIcons(context),
+                  ),
+                ),
 
-            /// 🔥 MAIN GLOWING BUTTON
-            GestureDetector(
-              onPanUpdate: (details) {
-                // Update position without toggling radial menu during drag
-                setState(() {
-                  _currentPosition += details.delta;
-                });
-              },
-              onPanEnd: (details) {
-                final screenWidth = MediaQuery.of(context).size.width;
-                final screenHeight = MediaQuery.of(context).size.height;
-                final topPadding = MediaQuery.of(context).padding.top;
-                final clampedX = _isRightSide ? (screenWidth - _iconSize) : 0.0;
-                final clampedY = _currentPosition.dy
-                    .clamp(topPadding, screenHeight - _iconSize);
-                _currentPosition = Offset(clampedX, clampedY);
-                widget.onDragEnd(_currentPosition);
-              },
-              onTap: widget.onTapMain,
-              child: RotationTransition(
-                turns: isRadial
-                    ? _rotateAnimation
-                    : const AlwaysStoppedAnimation(0.0),
-                child: GlowCircleButton(
-                  icon: Icons.local_fire_department_rounded,
-                  size: 70,
-                  onTap: widget.onTapMain,
+              /// 🔥 MAIN GLOWING BUTTON
+              GestureDetector(
+                onPanUpdate: (details) {
+                  // Update position without toggling radial menu during drag
+                  setState(() {
+                    _currentPosition += details.delta;
+                  });
+                },
+                onPanEnd: (details) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  final screenHeight = MediaQuery.of(context).size.height;
+                  final topPadding = MediaQuery.of(context).padding.top;
+                  final clampedX =
+                      _isRightSide ? (screenWidth - _iconSize) : 0.0;
+                  final clampedY = _currentPosition.dy
+                      .clamp(topPadding, screenHeight - _iconSize);
+                  _currentPosition = Offset(clampedX, clampedY);
+                  widget.onDragEnd(_currentPosition);
+                },
+                onTap: widget.onTapMain,
+                child: RotationTransition(
+                  turns: isRadial
+                      ? _rotateAnimation
+                      : const AlwaysStoppedAnimation(0.0),
+                  child: GlowCircleButton(
+                    icon: Icons.local_fire_department_rounded,
+                    size: 70,
+                    onTap: widget.onTapMain,
+                    isActive: widget.isScannerActive,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
