@@ -1,11 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/tags_container"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:clickable="true"
-    android:focusable="true">
+    android:layout_height="wrap_content"
+    android:padding="10dp">
 
-    <!-- Tags will be added programmatically here -->
+    <LinearLayout
+        android:id="@+id/banner_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/scanning_bg"
+        android:elevation="6dp"
+        android:orientation="vertical"
+        android:padding="16dp">
 
+        <TextView
+            android:id="@+id/threat_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Scanning..."
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/threat_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Analyzing screen content..."
+            android:textColor="#EEEEEE"
+            android:textSize="12sp" />
+    </LinearLayout>
 </FrameLayout>

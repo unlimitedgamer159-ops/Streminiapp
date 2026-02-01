@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:stremini_chatbot/providers/scanner_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/home/home_screen.dart';
-import 'providers/scanner_provider.dart';
+import 'utils/session_lifecycle_manager.dart';
 
-final globalContainerProvider = Provider<ProviderContainer?>((ref) => null);
-
-ProviderContainer? globalContainer;
- 
 void main() {
   runApp(const MyApp());
 }
@@ -33,21 +30,24 @@ class _AppWithContainer extends ConsumerStatefulWidget {
 
 class _AppWithContainerState extends ConsumerState<_AppWithContainer> {
   static const platform = MethodChannel('com.example.stremini_chatbot');
+  static ProviderContainer? globalContainer;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (globalContainer == null) {
-      globalContainer = ProviderScope.containerOf(context);
+    if (_AppWithContainerState.globalContainer == null) {
+      _AppWithContainerState.globalContainer =
+          ProviderScope.containerOf(context);
       _setupScannerListeners();
     }
   }
 
   void _setupScannerListeners() {
-    if (globalContainer == null) return;
+    if (_AppWithContainerState.globalContainer == null) return;
 
     platform.setMethodCallHandler((call) async {
-      final notifier = globalContainer!.read(scannerStateProvider.notifier);
+      final notifier = _AppWithContainerState.globalContainer!
+          .read(scannerStateProvider.notifier);
 
       switch (call.method) {
         case 'startScanner':
@@ -68,7 +68,9 @@ class _AppWithContainerState extends ConsumerState<_AppWithContainer> {
       debugShowCheckedModeBanner: false,
       title: 'Stremini AI',
       theme: AppTheme.darkTheme,
-      home: const HomeScreen(),
+      home: const SessionLifecycleManager(
+        child: HomeScreen(),
+      ),
     );
   }
 }

@@ -6,16 +6,17 @@ plugins {
 
 android {
     namespace = "com.example.stremini_chatbot"
-    compileSdk = 34
+    // UPDATED: 34 -> 36 (Required by image_picker)
+    compileSdk = 36
     ndkVersion = "29.0.14206865"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
 
     defaultConfig {
