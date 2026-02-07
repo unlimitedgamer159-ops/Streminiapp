@@ -462,6 +462,31 @@ class _HtmlStyleFloatingChatState extends ConsumerState<HtmlStyleFloatingChat>
   // ========================================
   List<Widget> _buildScanTags(List<ScanTag> tags) {
     return tags.map((tag) {
+      final label = tag.tag.trim().toLowerCase();
+      final isSafe = label == 'safe';
+      final isDangerous = label == 'scam' || label == 'danger' || label == 'threat';
+      final Color backgroundColor = isSafe
+          ? const Color(0xFF1D2F24)
+          : isDangerous
+              ? const Color(0xFF3A1F22)
+              : const Color(0xFF3A3221);
+      final Color borderColor = isSafe
+          ? const Color(0xFF2F5A45)
+          : isDangerous
+              ? const Color(0xFF5E2D31)
+              : const Color(0xFF5E4A2D);
+      final Color textColor = isSafe
+          ? const Color(0xFF9BE6B8)
+          : isDangerous
+              ? const Color(0xFFFFB6B6)
+              : const Color(0xFFFFD89A);
+      final IconData icon = Icons.shield_rounded;
+      final String tagText = isSafe
+          ? 'Safe: No Threat Detected'
+          : isDangerous
+              ? 'Danger: Threat Detected'
+              : 'Warning: Suspicious';
+
       return Positioned(
         left: tag.position.dx,
         top: tag.position.dy,
@@ -470,15 +495,16 @@ class _HtmlStyleFloatingChatState extends ConsumerState<HtmlStyleFloatingChat>
             _showTagDetails(tag);
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: tag.color.withOpacity(0.9),
-              borderRadius: BorderRadius.circular(12),
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: borderColor, width: 1),
               boxShadow: [
                 BoxShadow(
-                  color: tag.color.withOpacity(0.3),
-                  blurRadius: 8,
-                  spreadRadius: 2,
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
@@ -486,17 +512,17 @@ class _HtmlStyleFloatingChatState extends ConsumerState<HtmlStyleFloatingChat>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  tag.tag == 'Safe' ? Icons.check_circle : Icons.warning,
-                  color: Colors.white,
+                  icon,
+                  color: textColor,
                   size: 16,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
                 Text(
-                  tag.tag,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  tagText,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],

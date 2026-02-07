@@ -8,5 +8,5 @@
     android:notificationTimeout="100"
     android:canPerformGestures="false"
     android:canRequestFilterKeyEvents="false"
-    android:settingsActivity="com.example.stremini_chatbot.MainActivity"
+    android:settingsActivity="Android.stremini_ai.MainActivity"
     android:packageNames="@null" />

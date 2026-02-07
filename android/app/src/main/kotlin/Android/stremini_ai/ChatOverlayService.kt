@@ -1,4 +1,4 @@
-package com.example.stremini_chatbot
+package Android.stremini_ai
 
 import android.animation.ValueAnimator
 import android.app.NotificationChannel
@@ -46,10 +46,10 @@ import kotlin.math.sin
 class ChatOverlayService : Service(), View.OnTouchListener {
 
     companion object {
-        const val ACTION_SEND_MESSAGE = "com.example.stremini_chatbot.SEND_MESSAGE"
+        const val ACTION_SEND_MESSAGE = "Android.stremini_ai.SEND_MESSAGE"
         const val EXTRA_MESSAGE = "message"
-        const val ACTION_SCANNER_START = "com.example.stremini_chatbot.SCANNER_START"
-        const val ACTION_SCANNER_STOP = "com.example.stremini_chatbot.SCANNER_STOP"
+        const val ACTION_SCANNER_START = "Android.stremini_ai.SCANNER_START"
+        const val ACTION_SCANNER_STOP = "Android.stremini_ai.SCANNER_STOP"
         val NEON_BLUE: Int = android.graphics.Color.parseColor("#00D9FF")
         val WHITE: Int = android.graphics.Color.parseColor("#FFFFFF")
     }

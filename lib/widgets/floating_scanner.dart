@@ -294,11 +294,16 @@ class FloatingScanner extends ConsumerWidget {
   }
 
   Widget _buildResults(SecurityScanResult result) {
-    final Color statusColor = result.riskLevel == 'danger' 
-        ? Colors.red 
-        : result.riskLevel == 'warning' 
-            ? Colors.orange 
-            : Colors.green;
+    final bool isSafe = result.riskLevel != 'danger' && result.riskLevel != 'warning';
+    final Color bannerBackground = isSafe ? const Color(0xFF1D2F24) : const Color(0xFF3A1F22);
+    final Color bannerBorder = isSafe ? const Color(0xFF2F5A45) : const Color(0xFF5E2D31);
+    final Color iconColor = isSafe ? const Color(0xFF9BE6B8) : const Color(0xFFFFB6B6);
+    final Color titleColor = Colors.white;
+    final Color subTextColor = Colors.white70;
+    final String titleText = isSafe ? 'Safe: No Threat Detected' : 'Suspicious Links: Threat Detected';
+    final String subtitleText = isSafe
+        ? 'Scam Detection • Verified content appears safe'
+        : 'Scam Detection - Suspicious links may be dangerous';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -309,16 +314,23 @@ class FloatingScanner extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.2),
+              color: bannerBackground,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: statusColor.withOpacity(0.5), width: 2),
+              border: Border.all(color: bannerBorder, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Row(
               children: [
                 Icon(
-                  result.isSafe ? Icons.check_circle : Icons.warning,
-                  color: statusColor,
-                  size: 48,
+                  Icons.shield_rounded,
+                  color: iconColor,
+                  size: 36,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -326,18 +338,18 @@ class FloatingScanner extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        result.isSafe ? 'Safe' : 'Threats Detected',
+                        titleText,
                         style: TextStyle(
-                          color: statusColor,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                          color: titleColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
-                        result.riskLevel.toUpperCase(),
+                        subtitleText,
                         style: TextStyle(
-                          color: statusColor.withOpacity(0.8),
-                          fontSize: 14,
+                          color: subTextColor,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -364,21 +376,53 @@ class FloatingScanner extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: result.tags.map((tag) {
+                final label = tag.trim().toLowerCase();
+                final isTagSafe = label == 'safe';
+                final isDangerous = label == 'scam' || label == 'danger' || label == 'threat';
+                final Color backgroundColor = isTagSafe
+                    ? const Color(0xFF1D2F24)
+                    : isDangerous
+                        ? const Color(0xFF3A1F22)
+                        : const Color(0xFF3A3221);
+                final Color borderColor = isTagSafe
+                    ? const Color(0xFF2F5A45)
+                    : isDangerous
+                        ? const Color(0xFF5E2D31)
+                        : const Color(0xFF5E4A2D);
+                final Color textColor = isTagSafe
+                    ? const Color(0xFF9BE6B8)
+                    : isDangerous
+                        ? const Color(0xFFFFB6B6)
+                        : const Color(0xFFFFD89A);
+                final IconData icon = Icons.shield_rounded;
+                final String tagText = isTagSafe
+                    ? 'Safe: No Threat Detected'
+                    : isDangerous
+                        ? 'Danger: Threat Detected'
+                        : 'Warning: Suspicious';
+
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.red.withOpacity(0.5)),
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: borderColor, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.25),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.warning, color: Colors.red, size: 16),
+                      Icon(icon, color: textColor, size: 16),
                       const SizedBox(width: 4),
                       Text(
-                        tag,
-                        style: const TextStyle(color: Colors.white),
+                        tagText,
+                        style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),

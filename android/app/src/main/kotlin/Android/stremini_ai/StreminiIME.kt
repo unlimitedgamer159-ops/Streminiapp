@@ -1,4 +1,4 @@
-package com.example.stremini_chatbot
+package Android.stremini_ai
 
 import android.content.Context
 import android.inputmethodservice.InputMethodService
@@ -6,10 +6,13 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.*
@@ -41,6 +44,8 @@ class StreminiIME : InputMethodService() {
     private var isShiftOn = false
     private val letterKeyViews = mutableListOf<TextView>()
     private var shiftKeyView: View? = null
+    private val pressInterpolator = DecelerateInterpolator()
+    private val releaseInterpolator = AccelerateDecelerateInterpolator()
 
     override fun onCreateInputView(): View {
         isActive = true
@@ -73,6 +78,7 @@ class StreminiIME : InputMethodService() {
             if (char.length == 1 && char[0].isLetter()) {
                 (keyView as? TextView)?.let { letterKeyViews.add(it) }
             }
+            keyView?.let { attachKeyPressFeedback(it) }
             keyView?.setOnClickListener {
                 playClick(it)
                 commitText(char)
@@ -80,68 +86,118 @@ class StreminiIME : InputMethodService() {
         }
 
         // Special Keys
-        view.findViewById<View>(R.id.key_space)?.setOnClickListener {
-            playClick(it)
-            commitText(" ")
+        view.findViewById<View>(R.id.key_space)?.let { spaceKey ->
+            attachKeyPressFeedback(spaceKey)
+            spaceKey.setOnClickListener {
+                playClick(it)
+                commitText(" ")
+            }
         }
 
-        view.findViewById<View>(R.id.key_backspace)?.setOnClickListener {
-            playClick(it)
-            handleBackspace()
-        }
-        
-        // Hold backspace to delete continuously
-        view.findViewById<View>(R.id.key_backspace)?.setOnLongClickListener {
-            // Implementation for continuous delete could go here
-             handleBackspace()
-             true
-        }
-
-        view.findViewById<View>(R.id.key_enter)?.setOnClickListener {
-            playClick(it)
-            handleEnterKey()
+        view.findViewById<View>(R.id.key_backspace)?.let { backspaceKey ->
+            attachKeyPressFeedback(backspaceKey)
+            backspaceKey.setOnClickListener {
+                playClick(it)
+                handleBackspace()
+            }
+            
+            // Hold backspace to delete full text
+            backspaceKey.setOnLongClickListener {
+                playClick(it)
+                deleteAllText()
+                true
+            }
         }
 
-        shiftKeyView?.setOnClickListener {
-            playClick(it)
-            isShiftOn = !isShiftOn
-            updateShiftState()
+        view.findViewById<View>(R.id.key_enter)?.let { enterKey ->
+            attachKeyPressFeedback(enterKey)
+            enterKey.setOnClickListener {
+                playClick(it)
+                handleEnterKey()
+            }
         }
 
-        view.findViewById<View>(R.id.key_voice)?.setOnClickListener {
-             playClick(it)
-             Toast.makeText(this, "Voice input coming soon", Toast.LENGTH_SHORT).show()
+        shiftKeyView?.let { shiftKey ->
+            attachKeyPressFeedback(shiftKey)
+            shiftKey.setOnClickListener {
+                playClick(it)
+                isShiftOn = !isShiftOn
+                updateShiftState()
+            }
+        }
+
+        view.findViewById<View>(R.id.key_voice)?.let { voiceKey ->
+            attachKeyPressFeedback(voiceKey)
+            voiceKey.setOnClickListener {
+                 playClick(it)
+                 Toast.makeText(this, "Voice input coming soon", Toast.LENGTH_SHORT).show()
+            }
         }
 
         // AI Actions
-        view.findViewById<View>(R.id.action_improve)?.setOnClickListener {
-            playClick(it)
-            handleModifyText("improve")
+        view.findViewById<View>(R.id.action_improve)?.let { improveKey ->
+            attachKeyPressFeedback(improveKey)
+            improveKey.setOnClickListener {
+                playClick(it)
+                handleModifyText("improve")
+            }
         }
 
-        view.findViewById<View>(R.id.action_complete)?.setOnClickListener {
-            playClick(it)
-            handleComplete()
+        view.findViewById<View>(R.id.action_complete)?.let { completeKey ->
+            attachKeyPressFeedback(completeKey)
+            completeKey.setOnClickListener {
+                playClick(it)
+                handleComplete()
+            }
         }
         
-        view.findViewById<View>(R.id.action_tone)?.setOnClickListener {
-             playClick(it)
-             handleModifyText("tone")
+        view.findViewById<View>(R.id.action_tone)?.let { toneKey ->
+            attachKeyPressFeedback(toneKey)
+            toneKey.setOnClickListener {
+                 playClick(it)
+                 handleModifyText("tone")
+            }
         }
         
-        view.findViewById<View>(R.id.action_undo)?.setOnClickListener {
-             playClick(it)
-             // Undo implementation would require tracking history
-             Toast.makeText(this, "Undo not available yet", Toast.LENGTH_SHORT).show()
+        view.findViewById<View>(R.id.action_undo)?.let { undoKey ->
+            attachKeyPressFeedback(undoKey)
+            undoKey.setOnClickListener {
+                 playClick(it)
+                 // Undo implementation would require tracking history
+                 Toast.makeText(this, "Undo not available yet", Toast.LENGTH_SHORT).show()
+            }
         }
 
         updateShiftState()
     }
 
     private fun playClick(view: View) {
-        view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(50).withEndAction {
-            view.animate().scaleX(1f).scaleY(1f).setDuration(50).start()
-        }.start()
+        view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+
+    private fun attachKeyPressFeedback(view: View) {
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate()
+                        .scaleX(0.94f)
+                        .scaleY(0.94f)
+                        .setDuration(90)
+                        .setInterpolator(pressInterpolator)
+                        .start()
+                }
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(140)
+                        .setInterpolator(releaseInterpolator)
+                        .start()
+                }
+            }
+            false
+        }
     }
 
     private fun commitText(text: String) {
@@ -164,6 +220,15 @@ class StreminiIME : InputMethodService() {
             ic.commitText("", 1)
         } else {
             ic.deleteSurroundingText(1, 0)
+        }
+    }
+
+    private fun deleteAllText() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(1000, 0) ?: ""
+        val after = ic.getTextAfterCursor(1000, 0) ?: ""
+        if (before.isNotEmpty() || after.isNotEmpty()) {
+            ic.deleteSurroundingText(before.length, after.length)
         }
     }
 

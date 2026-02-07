@@ -1,4 +1,4 @@
-package com.example.stremini_chatbot
+package Android.stremini_ai
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
@@ -27,9 +27,9 @@ import java.util.concurrent.TimeUnit
 class ScreenReaderService : AccessibilityService() {
 
     companion object {
-        const val ACTION_START_SCAN = "com.example.stremini_chatbot.START_SCAN"
-        const val ACTION_STOP_SCAN = "com.example.stremini_chatbot.STOP_SCAN"
-        const val ACTION_SCAN_COMPLETE = "com.example.stremini_chatbot.SCAN_COMPLETE"
+        const val ACTION_START_SCAN = "Android.stremini_ai.START_SCAN"
+        const val ACTION_STOP_SCAN = "Android.stremini_ai.STOP_SCAN"
+        const val ACTION_SCAN_COMPLETE = "Android.stremini_ai.SCAN_COMPLETE"
         const val EXTRA_SCANNED_TEXT = "scanned_text"
         private const val TAG = "ScreenReaderService"
         private var instance: ScreenReaderService? = null

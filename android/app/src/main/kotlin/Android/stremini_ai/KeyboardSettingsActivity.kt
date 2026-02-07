@@ -1,4 +1,4 @@
-package com.example.stremini_chatbot
+package Android.stremini_ai
 
 import android.app.Activity
 import android.content.Intent
