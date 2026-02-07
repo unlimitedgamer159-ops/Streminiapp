@@ -1,6 +1,6 @@
 # Stremini AI
 
-**Package:** `com.example.stremini_chatbot`
+**Package:** `com.example.Android.stremini_ai`
 **Platform:** Android (Hybrid Flutter/Kotlin)
 **Backend:** Cloudflare Workers
 
