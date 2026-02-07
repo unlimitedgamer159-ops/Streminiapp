@@ -38,6 +38,9 @@ class StreminiIME : InputMethodService() {
     // State
     private var currentAppContext = "general"
     private var lastComposedText = ""
+    private var isShiftOn = false
+    private val letterKeyViews = mutableListOf<TextView>()
+    private var shiftKeyView: View? = null
 
     override fun onCreateInputView(): View {
         isActive = true
@@ -47,6 +50,9 @@ class StreminiIME : InputMethodService() {
     }
 
     private fun setupKeyboardInteractions(view: View) {
+        letterKeyViews.clear()
+        shiftKeyView = view.findViewById(R.id.key_shift)
+
         // Map all standard keys
         val keyMap = mapOf(
             R.id.key_q to "q", R.id.key_w to "w", R.id.key_e to "e", R.id.key_r to "r", R.id.key_t to "t",
@@ -63,7 +69,11 @@ class StreminiIME : InputMethodService() {
         )
 
         keyMap.forEach { (id, char) ->
-            view.findViewById<View>(id)?.setOnClickListener {
+            val keyView = view.findViewById<View>(id)
+            if (char.length == 1 && char[0].isLetter()) {
+                (keyView as? TextView)?.let { letterKeyViews.add(it) }
+            }
+            keyView?.setOnClickListener {
                 playClick(it)
                 commitText(char)
             }
@@ -89,14 +99,13 @@ class StreminiIME : InputMethodService() {
 
         view.findViewById<View>(R.id.key_enter)?.setOnClickListener {
             playClick(it)
-            sendDefaultEditorAction(true)
+            handleEnterKey()
         }
 
-        view.findViewById<View>(R.id.key_shift)?.setOnClickListener {
-             playClick(it)
-             // Shift toggle implementation (simple caps lock for now or just single char)
-             // For simplicity, just toggling uppercase could be complex without UI update.
-             // We'll leave as placeholder or single char uppercase if we track state.
+        shiftKeyView?.setOnClickListener {
+            playClick(it)
+            isShiftOn = !isShiftOn
+            updateShiftState()
         }
 
         view.findViewById<View>(R.id.key_voice)?.setOnClickListener {
@@ -125,6 +134,8 @@ class StreminiIME : InputMethodService() {
              // Undo implementation would require tracking history
              Toast.makeText(this, "Undo not available yet", Toast.LENGTH_SHORT).show()
         }
+
+        updateShiftState()
     }
 
     private fun playClick(view: View) {
@@ -134,11 +145,26 @@ class StreminiIME : InputMethodService() {
     }
 
     private fun commitText(text: String) {
-        currentInputConnection?.commitText(text, 1)
+        val updatedText = if (isShiftOn && text.length == 1 && text[0].isLetter()) {
+            text.uppercase()
+        } else {
+            text
+        }
+        currentInputConnection?.commitText(updatedText, 1)
+        if (isShiftOn && text.length == 1 && text[0].isLetter()) {
+            isShiftOn = false
+            updateShiftState()
+        }
     }
 
     private fun handleBackspace() {
-        currentInputConnection?.deleteSurroundingText(1, 0)
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            ic.commitText("", 1)
+        } else {
+            ic.deleteSurroundingText(1, 0)
+        }
     }
 
     private fun getCurrentText(): String {
@@ -245,8 +271,31 @@ class StreminiIME : InputMethodService() {
         ic.commitText(newText, 1)
     }
 
+    private fun handleEnterKey() {
+        val ic = currentInputConnection ?: return
+        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+        if (action != null && action != EditorInfo.IME_ACTION_NONE) {
+            ic.performEditorAction(action)
+        } else {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        }
+    }
+
+    private fun updateShiftState() {
+        shiftKeyView?.alpha = if (isShiftOn) 1f else 0.6f
+        letterKeyViews.forEach { keyView ->
+            val baseChar = keyView.text.toString()
+            if (baseChar.length == 1 && baseChar[0].isLetter()) {
+                keyView.text = if (isShiftOn) baseChar.uppercase() else baseChar.lowercase()
+            }
+        }
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        isShiftOn = false
+        updateShiftState()
         
         currentAppContext = when (info?.packageName) {
             "com.whatsapp", "com.facebook.orca" -> "messaging"

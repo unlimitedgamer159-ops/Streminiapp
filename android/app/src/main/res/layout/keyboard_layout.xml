@@ -151,7 +151,7 @@
             <TextView
                  android:id="@+id/key_comma"
                  style="@style/KeyboardSpecialKey"
-                 android:text="☺"
+                 android:text=","
                  android:layout_weight="1"/>
 
             <TextView
