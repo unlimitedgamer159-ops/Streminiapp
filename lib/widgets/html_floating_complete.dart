@@ -495,40 +495,54 @@ class _HtmlStyleFloatingChatState extends ConsumerState<HtmlStyleFloatingChat>
   // ========================================
   List<Widget> _buildScanTags(List<ScanTag> tags) {
     return tags.map((tag) {
+      final label = tag.tag.trim().toLowerCase();
+      final isSafe = label == 'safe';
+      final isDangerous = label == 'scam' || label == 'danger' || label == 'threat';
+      final Color backgroundColor = isSafe
+          ? const Color(0xFF0F291E)
+          : isDangerous
+              ? const Color(0xFF2A1215)
+              : const Color(0xFF2A2412);
+      final Color borderColor = isSafe
+          ? const Color(0xFF1B4D36)
+          : isDangerous
+              ? const Color(0xFF5C2B2F)
+              : const Color(0xFF5C4D2B);
+      final Color textColor = isSafe
+          ? const Color(0xFF6DD58C)
+          : isDangerous
+              ? const Color(0xFFFF8080)
+              : const Color(0xFFFFD580);
+      final IconData icon = isSafe ? Icons.shield_outlined : Icons.shield;
+      final String tagText = isSafe ? 'Safe: No Threat Detected' : tag.tag;
+
       return Positioned(
         left: tag.position.dx,
         top: tag.position.dy,
         child: GestureDetector(
           onTap: () => _showTagDetails(tag),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: tag.color,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: tag.color.withOpacity(0.5),
-                  blurRadius: 12,
-                  spreadRadius: 3,
-                ),
-              ],
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: borderColor, width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  tag.tag == 'Safe' ? Icons.check_circle : Icons.warning,
-                  color: Colors.white,
-                  size: 18,
+                  icon,
+                  color: textColor,
+                  size: 14,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 Text(
-                  tag.tag,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                  tagText,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],

@@ -29,7 +29,7 @@ class _AppWithContainer extends ConsumerStatefulWidget {
 }
 
 class _AppWithContainerState extends ConsumerState<_AppWithContainer> {
-  static const platform = MethodChannel('com.example.stremini_chatbot');
+  static const platform = MethodChannel('Android.stremini_ai');
   static ProviderContainer? globalContainer;
 
   @override

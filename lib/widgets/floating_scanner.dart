@@ -294,11 +294,13 @@ class FloatingScanner extends ConsumerWidget {
   }
 
   Widget _buildResults(SecurityScanResult result) {
-    final Color statusColor = result.riskLevel == 'danger' 
-        ? Colors.red 
-        : result.riskLevel == 'warning' 
-            ? Colors.orange 
-            : Colors.green;
+    final bool isSafe = result.riskLevel != 'danger' && result.riskLevel != 'warning';
+    final Color bannerStart = isSafe ? const Color(0xFF1A3826) : const Color(0xFF38261A);
+    final Color bannerEnd = isSafe ? const Color(0xFF0F251B) : const Color(0xFF251B0F);
+    final Color bannerBorder = isSafe ? const Color(0xFF2D5C43) : const Color(0xFF5C432D);
+    final Color iconColor = isSafe ? const Color(0xFF6DD58C) : const Color(0xFFFFD580);
+    final Color titleColor = Colors.white;
+    final Color subTextColor = Colors.white70;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -309,16 +311,20 @@ class FloatingScanner extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.2),
+              gradient: LinearGradient(
+                colors: [bannerStart, bannerEnd],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: statusColor.withOpacity(0.5), width: 2),
+              border: Border.all(color: bannerBorder, width: 1.5),
             ),
             child: Row(
               children: [
                 Icon(
-                  result.isSafe ? Icons.check_circle : Icons.warning,
-                  color: statusColor,
-                  size: 48,
+                  result.isSafe ? Icons.shield_outlined : Icons.shield,
+                  color: iconColor,
+                  size: 36,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -326,18 +332,18 @@ class FloatingScanner extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        result.isSafe ? 'Safe' : 'Threats Detected',
+                        result.isSafe ? 'Safe: No Threat Detected' : 'Warning: Potential Threats',
                         style: TextStyle(
-                          color: statusColor,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                          color: titleColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
                         result.riskLevel.toUpperCase(),
                         style: TextStyle(
-                          color: statusColor.withOpacity(0.8),
-                          fontSize: 14,
+                          color: subTextColor,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -364,21 +370,42 @@ class FloatingScanner extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: result.tags.map((tag) {
+                final label = tag.trim().toLowerCase();
+                final isTagSafe = label == 'safe';
+                final isDangerous = label == 'scam' || label == 'danger' || label == 'threat';
+                final Color backgroundColor = isTagSafe
+                    ? const Color(0xFF0F291E)
+                    : isDangerous
+                        ? const Color(0xFF2A1215)
+                        : const Color(0xFF2A2412);
+                final Color borderColor = isTagSafe
+                    ? const Color(0xFF1B4D36)
+                    : isDangerous
+                        ? const Color(0xFF5C2B2F)
+                        : const Color(0xFF5C4D2B);
+                final Color textColor = isTagSafe
+                    ? const Color(0xFF6DD58C)
+                    : isDangerous
+                        ? const Color(0xFFFF8080)
+                        : const Color(0xFFFFD580);
+                final IconData icon = isTagSafe ? Icons.shield_outlined : Icons.shield;
+                final String tagText = isTagSafe ? 'Safe: No Threat Detected' : tag;
+
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.red.withOpacity(0.5)),
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: borderColor, width: 1),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.warning, color: Colors.red, size: 16),
+                      Icon(icon, color: textColor, size: 14),
                       const SizedBox(width: 4),
                       Text(
-                        tag,
-                        style: const TextStyle(color: Colors.white),
+                        tagText,
+                        style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),

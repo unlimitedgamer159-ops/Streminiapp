@@ -1,4 +1,4 @@
-package com.example.stremini_chatbot
+package Android.stremini_ai
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -50,7 +50,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         
         // Scanner method channel
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.stremini_chatbot").setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "Android.stremini_ai").setMethodCallHandler { call, result ->
             when (call.method) {
                 "startScanner" -> {
                     result.success(true)
