@@ -165,6 +165,8 @@ class _DraggableChatIconState extends ConsumerState<DraggableChatIcon>
 
     // Icons in your radial menu
     final keyboardService = KeyboardService();
+    
+    // UPDATED: Connected the Shield icon to the Scanner logic
     final List<Map<String, dynamic>> icons = [
       {'icon': Icons.message, 'action': () {}},
       {'icon': Icons.settings, 'action': () {}},
@@ -176,19 +178,23 @@ class _DraggableChatIconState extends ConsumerState<DraggableChatIcon>
           keyboardService.openKeyboardSettingsActivity();
         }
       },
-      {'icon': Icons.shield, 'action': () {}},
+      {
+        'icon': Icons.shield, 
+        'action': () {
+           // Toggle Scanning Mode
+           ref.read(scannerStateProvider.notifier).toggleScanning();
+        }
+      },
     ];
     double startAngle;
     double endAngle;
-    // ✅ ADDED
+    
     if (isOnRightSide) {
       // Icon is on the Right edge. Menu expands to the Left.
-      // 90° is Top, 270° is Bottom.
       startAngle = 90.0;
       endAngle = 270.0;
     } else {
       // Icon is on the Left edge. Menu expands to the Right.
-      // 90° is Top, -90° is Bottom.
       startAngle = 90.0;
       endAngle = -90.0;
     }
