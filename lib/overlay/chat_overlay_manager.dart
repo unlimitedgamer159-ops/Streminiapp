@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stremini_chatbot/screens/chat_screen.dart';
 import 'package:stremini_chatbot/widgets/draggable_chat_icon.dart';
+// Import the new scanning widget
+import 'package:stremini_chatbot/widgets/scanning_effect_overlay.dart';
 
 import '../providers/chat_window_state_provider.dart';
 import '../providers/scanner_provider.dart';
@@ -56,9 +58,12 @@ class _ChatOverlayManagerState extends ConsumerState<ChatOverlayManager> {
         // 1. The main application content (The App UI)
         widget.child,
 
-        // 2. The Floating Chat Icon Layer
-        // IgnorePointer wrapping with ignoring: false means the DraggableChatIcon
-        // can handle its own gestures, while touches outside pass through to the app
+        // 2. The Scanning Effects Layer (New)
+        // This sits on top of the app but below the chat head
+        // It's stateless/transparent when idle, so it won't block touches unless scanning
+        const ScanningEffectOverlay(),
+
+        // 3. The Floating Chat Icon Layer
         if (!isMaximized)
           IgnorePointer(
             ignoring: false,
@@ -72,7 +77,7 @@ class _ChatOverlayManagerState extends ConsumerState<ChatOverlayManager> {
             ),
           ),
 
-        // 3. The Maximized Chat Window Layer
+        // 4. The Maximized Chat Window Layer
         if (isMaximized) _buildMaximizedChat(context),
       ],
     );
