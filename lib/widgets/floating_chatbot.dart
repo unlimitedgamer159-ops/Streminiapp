@@ -54,7 +54,21 @@ class ChatMessage {
 class FloatingChatbotNotifier extends Notifier<FloatingChatbotState> {
   @override
   FloatingChatbotState build() {
-    return FloatingChatbotState();
+    return FloatingChatbotState(
+      messages: [
+        // Initial welcome message matching the web demo
+        ChatMessage(
+          text: "Hey there! I'm Stremini - your AI assistant & digital bodyguard.",
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+        ChatMessage(
+          text: "How can I help you today?",
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+      ]
+    );
   }
 
   void show() {
@@ -112,49 +126,52 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
     super.dispose();
   }
 
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
     final notifier = ref.read(floatingChatbotProvider.notifier);
+    final currentState = ref.read(floatingChatbotProvider);
     final apiService = ref.read(apiServiceProvider);
 
-    // Add user message
+    // 1. Add user message locally
     notifier.addMessage(text, true);
     _controller.clear();
+    _scrollToBottom();
 
-    // Scroll to bottom
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    // 2. Prepare History for Backend (Gemini Format)
+    // Map internal ChatMessage to { role: 'user'|'model', parts: [{text: ...}] }
+    final history = currentState.messages.map((msg) => {
+      "role": msg.isUser ? "user" : "model",
+      "parts": [
+        { "text": msg.text }
+      ]
+    }).toList();
 
-    // Get AI response
+    // 3. Get AI response
     notifier.setLoading(true);
     try {
-      final response = await apiService.sendMessage(text);
+      // Pass the history along with the new message
+      final response = await apiService.sendMessage(text, history: history);
       notifier.addMessage(response, false);
     } catch (e) {
       notifier.addMessage("Error: $e", false);
     } finally {
       notifier.setLoading(false);
+      _scrollToBottom();
     }
-
-    // Scroll to bottom again
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
   }
 
   @override
@@ -193,6 +210,9 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
               color: Colors.black.withOpacity(0.95),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.blue, width: 2),
+              boxShadow: [
+                 BoxShadow(color: Colors.blue.withOpacity(0.2), blurRadius: 10, spreadRadius: 2)
+              ]
             ),
             child: Column(
               children: [
@@ -261,13 +281,10 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
             padding: EdgeInsets.all(8.0),
             child: Row(
               children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.blue,
-                  ),
+                 SizedBox(
+                  width: 16, 
+                  height: 16, 
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue)
                 ),
                 SizedBox(width: 8),
                 Text(
@@ -288,7 +305,12 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
             constraints: const BoxConstraints(maxWidth: 240),
             decoration: BoxDecoration(
               color: message.isUser ? Colors.blue : Colors.grey[800],
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(12),
+                topRight: const Radius.circular(12),
+                bottomLeft: message.isUser ? const Radius.circular(12) : Radius.zero,
+                bottomRight: message.isUser ? Radius.zero : const Radius.circular(12),
+              ),
             ),
             child: Text(
               message.text,
@@ -306,6 +328,7 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
       decoration: BoxDecoration(
         color: Colors.grey[900],
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+        border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1)))
       ),
       child: Row(
         children: [
@@ -325,7 +348,7 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
               controller: _controller,
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Ask anything...',
+                hintText: 'Ask Stremini...',
                 hintStyle: TextStyle(color: Colors.grey[600], fontSize: 13),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -356,6 +379,9 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
             // Header
             Container(
               padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5))
+              ),
               child: Row(
                 children: [
                   const Icon(Icons.smart_toy, color: Colors.blue),
@@ -380,7 +406,7 @@ class _FloatingChatbotState extends ConsumerState<FloatingChatbot> {
                 ],
               ),
             ),
-            const Divider(color: Colors.grey, height: 1),
+            
             // Messages
             Expanded(
               child: _buildMessageList(state),
