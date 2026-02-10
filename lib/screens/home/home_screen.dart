@@ -13,7 +13,7 @@ import '../../controllers/home_controller.dart';
 import '../../services/keyboard_service.dart';
 import '../chat_screen.dart';
 
-// Add keyboard provider
+// ... (Keep existing keyboard providers) ...
 final keyboardServiceProvider =
     Provider<KeyboardService>((ref) => KeyboardService());
 final keyboardStatusProvider = FutureProvider<KeyboardStatus>((ref) async {
@@ -73,7 +73,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _buildSmartChatbotCard(context, state, controller),
             const SizedBox(height: 16),
 
-            // AI Keyboard Card
             keyboardStatus.when(
               data: (status) => _buildKeyboardCard(context, status),
               loading: () => const SizedBox.shrink(),
@@ -84,44 +83,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _buildInfoCard(),
             const SizedBox(height: 32),
 
-            if (!state.permissionStatus.hasAll) ...[
+            // Updated Permissions Section: Removed Accessibility/Scanner check
+            if (state.permissionStatus.needsOverlay) ...[
               Text('Required Permissions', style: AppTextStyles.h3),
               const SizedBox(height: 12),
-              if (state.permissionStatus.needsOverlay)
-                PermissionCard(
-                  title: 'Overlay Permission',
-                  description: 'Required for floating bubble over other apps',
-                  icon: Icons.bubble_chart,
-                  color: AppColors.warning,
-                  onTap: () => controller.requestOverlayPermission(),
-                ),
-              if (state.permissionStatus.needsAccessibility)
-                PermissionCard(
-                  title: 'Accessibility Permission',
-                  description: 'Required for screen scanner to detect scams',
-                  icon: Icons.accessibility_new,
-                  color: AppColors.emotional,
-                  onTap: () => controller.requestAccessibilityPermission(),
-                ),
-              const SizedBox(height: 16),
-              AppContainer(
-                padding: const EdgeInsets.all(16),
-                color: AppColors.info.withOpacity(0.1),
-                border: BorderSide(color: AppColors.info.withOpacity(0.3)),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: AppColors.info, size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Both permissions are required for the floating bubble to work properly',
-                        style:
-                            AppTextStyles.body3.copyWith(color: AppColors.info),
-                      ),
-                    ),
-                  ],
-                ),
+              PermissionCard(
+                title: 'Overlay Permission',
+                description: 'Required for floating bubble over other apps',
+                icon: Icons.bubble_chart,
+                color: AppColors.warning,
+                onTap: () => controller.requestOverlayPermission(),
               ),
+              const SizedBox(height: 16),
             ],
           ],
         ),
@@ -129,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  // ... (Keep _buildAppBar and _buildDrawer as they were) ...
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     return AppBar(
       backgroundColor: AppColors.black,
@@ -232,8 +206,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
           const SizedBox(height: 8),
+          // Updated Text: Removed "scam protection"
           Text(
-            'Your AI-powered scam protection is ready',
+            'Your AI-powered assistant is ready',
             style: AppTextStyles.subtitle1,
           ),
         ],
@@ -258,16 +233,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     HomeController controller,
   ) {
     return FeatureCard(
-      title: 'Smart Chatbot & Scam Detector',
-      description: 'Floating AI assistant with real-time screen analyzer',
+      title: 'Smart Chatbot', // Removed "& Scam Detector"
+      description: 'Floating AI assistant', // Removed "with real-time screen analyzer"
       icon: Icons.chat_bubble_outline,
       iconColor: AppColors.primary,
       status: state.bubbleActive ? 'Active' : 'Inactive',
       statusColor: state.bubbleActive ? AppColors.success : AppColors.lightGray,
       badges: const [
         'Floating Chat',
-        'Screen Scanner',
-        'Scam Detection',
+        // Removed: 'Screen Scanner', 'Scam Detection',
       ],
       trailing: state.isLoading
           ? const SizedBox(
@@ -285,7 +259,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   : (value) async {
                       final success = await controller.toggleBubble(value);
                       if (!success && mounted) {
-                        // Revert the switch if the operation failed
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content:
@@ -298,7 +271,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           SnackBar(
                             content: Text(
                               value
-                                  ? 'Floating bubble activated! Check your screen.'
+                                  ? 'Floating bubble activated!'
                                   : 'Floating bubble deactivated',
                             ),
                             backgroundColor:
@@ -370,14 +343,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          const InfoStep(number: '1', text: 'Grant all required permissions'),
+          const InfoStep(number: '1', text: 'Grant required permissions'),
           const InfoStep(number: '2', text: 'Toggle Smart Chatbot ON'),
           const InfoStep(
               number: '3', text: 'Tap the floating bubble to open menu'),
+          // Removed InfoStep 4 about Scanner
           const InfoStep(
-              number: '4', text: 'Use Scanner icon to detect scams on screen'),
-          const InfoStep(
-              number: '5',
+              number: '4', // Renumbered from 5
               text: 'Enable AI Keyboard for smart typing',
               color: AppColors.secondary),
         ],
