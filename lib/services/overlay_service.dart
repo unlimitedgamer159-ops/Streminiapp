@@ -23,14 +23,7 @@ class OverlayService {
     }
   }
   
-  Future<void> startScreenScan() async {
-    if (!Platform.isAndroid) return;
-    try {
-      await _channel.invokeMethod('startScreenScan');
-    } catch (e) {
-      throw OverlayServiceException('Failed to start scan: $e');
-    }
-  }
+  // REMOVED: Future<void> startScreenScan() async { ... }
 }
 
 class OverlayServiceException implements Exception {
