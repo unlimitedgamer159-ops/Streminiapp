@@ -2,53 +2,71 @@ package com.example.stremini_chatbot
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.util.Log
 import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import org.json.JSONArray
 
 class ScreenReaderService : AccessibilityService() {
 
     companion object {
+        const val TAG = "ScreenReaderService"
         const val ACTION_START_SCAN = "com.example.stremini_chatbot.START_SCAN"
         const val ACTION_STOP_SCAN = "com.example.stremini_chatbot.STOP_SCAN"
+        const val ACTION_PERFORM_SINGLE_SCAN = "com.example.stremini_chatbot.PERFORM_SINGLE_SCAN"
         
-        // CORRECT API ENDPOINT FOR SCAM DETECTION
-        private const val BASE_URL = "https://ai-keyboard-backend.vishwajeetadkine705.workers.dev"
-        private const val SCAN_ENDPOINT = "$BASE_URL/security/analyze/text"
+        // Broadcast actions for UI updates
+        const val ACTION_SCAN_STARTED = "com.example.stremini_chatbot.SCAN_STARTED"
+        const val ACTION_SCAN_PROGRESS = "com.example.stremini_chatbot.SCAN_PROGRESS"
+        const val ACTION_SCAN_COMPLETE = "com.example.stremini_chatbot.SCAN_COMPLETE"
+        const val ACTION_SCAN_RESULT = "com.example.stremini_chatbot.SCAN_RESULT"
         
+        const val EXTRA_PROGRESS = "progress"
+        const val EXTRA_IS_THREAT = "is_threat"
+        const val EXTRA_THREAT_TYPE = "threat_type"
+        const val EXTRA_MESSAGE = "message"
+        const val EXTRA_DETAILS = "details"
+        const val EXTRA_CONFIDENCE = "confidence"
+        
+        private const val API_URL = "https://ai-keyboard-backend.vishwajeetadkine705.workers.dev/security/analyze/text"
         private var isScanning = false
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var scanJob: Job? = null
     
-    // Optimized OkHttp Client
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Log.d(TAG, "Accessibility Service Connected")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_SCAN -> {
                 isScanning = true
-                Log.d("StreminiScanner", "Screen Detection Started")
-                // Launch coroutine to start scanning
-                serviceScope.launch {
-                    performGlobalScan()
-                }
+                Log.d(TAG, "Continuous scanning enabled")
             }
             ACTION_STOP_SCAN -> {
                 isScanning = false
                 scanJob?.cancel()
-                Log.d("StreminiScanner", "Screen Detection Stopped")
+                Log.d(TAG, "Continuous scanning disabled")
+            }
+            ACTION_PERFORM_SINGLE_SCAN -> {
+                // Perform immediate single scan
+                Log.d(TAG, "Performing single scan...")
+                serviceScope.launch {
+                    performScanWithAnimation()
+                }
             }
         }
         return START_STICKY
@@ -56,138 +74,167 @@ class ScreenReaderService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isScanning) return
-
-        // Trigger scan on content changes
+        
+        // Auto-scan on content changes
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || 
             event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             
-            // Debounce: Wait 2 seconds for screen to settle
             scanJob?.cancel()
             scanJob = serviceScope.launch {
-                delay(2000) 
+                delay(2000)
                 if (isScanning) {
-                    performGlobalScan()
+                    performScanWithAnimation()
                 }
             }
         }
     }
 
-    private suspend fun performGlobalScan() {
+    private suspend fun performScanWithAnimation() {
         try {
-            val rootNode = rootInActiveWindow ?: return
-            val foundTexts = mutableListOf<String>()
-            extractText(rootNode, foundTexts)
+            // Step 1: Send scan started broadcast
+            sendBroadcast(Intent(ACTION_SCAN_STARTED))
+            Log.d(TAG, "Scan started")
             
-            val screenContent = foundTexts.joinToString(" ")
-            
-            // Only scan if we have meaningful content
-            if (screenContent.trim().length > 20) {
-                checkContentWithApi(screenContent)
+            // Step 2: Extract screen content with progress updates
+            sendProgress(10)
+            val rootNode = rootInActiveWindow
+            if (rootNode == null) {
+                Log.e(TAG, "Cannot access screen content")
+                sendScanComplete(false)
+                return
             }
+            
+            sendProgress(30)
+            val texts = mutableListOf<String>()
+            extractText(rootNode, texts)
+            
+            val content = texts.joinToString(" ")
+            Log.d(TAG, "Extracted ${texts.size} text elements, ${content.length} chars")
+            
+            if (content.trim().length < 10) {
+                Log.d(TAG, "Content too short, skipping scan")
+                sendScanComplete(false)
+                return
+            }
+            
+            // Step 3: Call API with progress
+            sendProgress(50)
+            delay(500) // Slight delay for animation
+            
+            val result = callSecurityApi(content)
+            
+            sendProgress(90)
+            delay(300)
+            
+            // Step 4: Send results
+            sendProgress(100)
+            if (result != null) {
+                sendScanResult(result)
+            } else {
+                sendScanComplete(false)
+            }
+            
         } catch (e: Exception) {
-            Log.e("StreminiScanner", "Scan error: ${e.message}")
+            Log.e(TAG, "Scan error", e)
+            sendScanComplete(false)
         }
     }
 
-    private suspend fun checkContentWithApi(content: String) {
-        try {
-            // Build request body matching your API format
+    private suspend fun callSecurityApi(text: String): ScanResult? {
+        return try {
+            Log.d(TAG, "Calling API: $API_URL")
+            
             val jsonBody = JSONObject().apply {
-                put("text", content)
+                put("text", text)
             }
             
             val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
             
             val request = Request.Builder()
-                .url(SCAN_ENDPOINT)
+                .url(API_URL)
                 .post(requestBody)
                 .addHeader("Content-Type", "application/json")
                 .build()
-
-            Log.d("StreminiScanner", "Sending request to: $SCAN_ENDPOINT")
             
             val response = client.newCall(request).execute()
             
             if (response.isSuccessful) {
-                val responseString = response.body?.string()
-                Log.d("StreminiScanner", "Response: $responseString")
+                val responseBody = response.body?.string()
+                Log.d(TAG, "API Response: $responseBody")
                 
-                if (!responseString.isNullOrEmpty()) {
-                    val jsonResponse = JSONObject(responseString)
+                if (!responseBody.isNullOrEmpty()) {
+                    val json = JSONObject(responseBody)
                     
-                    // Parse response from your API
-                    val isThreat = jsonResponse.optBoolean("is_threat", false)
-                    val type = jsonResponse.optString("type", "safe")
-                    val message = jsonResponse.optString("message", "")
-                    val confidence = jsonResponse.optDouble("confidence", 0.0)
-                    
-                    // Get details array
-                    val detailsArray = jsonResponse.optJSONArray("details")
-                    val details = mutableListOf<String>()
-                    if (detailsArray != null) {
-                        for (i in 0 until detailsArray.length()) {
-                            details.add(detailsArray.getString(i))
-                        }
-                    }
-                    
-                    // Show alert if threat detected
-                    if (isThreat) {
-                        val emoji = when (type) {
-                            "danger" -> "🚨"
-                            "warning" -> "⚠️"
-                            else -> "ℹ️"
-                        }
-                        
-                        val detailsText = if (details.isNotEmpty()) {
-                            "\n\nDetails:\n• " + details.joinToString("\n• ")
-                        } else {
-                            ""
-                        }
-                        
-                        val alertMessage = "$emoji THREAT DETECTED\n\n$message$detailsText\n\nConfidence: ${(confidence * 100).toInt()}%"
-                        
-                        // Send to ChatOverlayService
-                        withContext(Dispatchers.Main) {
-                            val intent = Intent(ChatOverlayService.ACTION_SEND_MESSAGE).apply {
-                                putExtra(ChatOverlayService.EXTRA_MESSAGE, alertMessage)
-                            }
-                            sendBroadcast(intent)
-                        }
-                        
-                        // Wait before next scan to avoid spam
-                        delay(10000)
-                    } else {
-                        Log.d("StreminiScanner", "No threats detected")
-                        // Optional: Notify user scan completed
-                        // withContext(Dispatchers.Main) {
-                        //     val intent = Intent(ChatOverlayService.ACTION_SEND_MESSAGE).apply {
-                        //         putExtra(ChatOverlayService.EXTRA_MESSAGE, "✅ Screen scan complete - No threats found")
-                        //     }
-                        //     sendBroadcast(intent)
-                        // }
-                    }
-                }
+                    ScanResult(
+                        isThreat = json.optBoolean("is_threat", false),
+                        type = json.optString("type", "safe"),
+                        message = json.optString("message", "No threats detected"),
+                        details = parseDetailsArray(json),
+                        confidence = json.optDouble("confidence", 0.0)
+                    )
+                } else null
             } else {
-                Log.e("StreminiScanner", "API Error: ${response.code} - ${response.message}")
+                Log.e(TAG, "API Error: ${response.code}")
+                null
             }
         } catch (e: Exception) {
-            Log.e("StreminiScanner", "API Request Failed: ${e.message}", e)
+            Log.e(TAG, "API call failed", e)
+            null
         }
+    }
+
+    private fun parseDetailsArray(json: JSONObject): List<String> {
+        val details = mutableListOf<String>()
+        try {
+            val detailsArray = json.optJSONArray("details")
+            if (detailsArray != null) {
+                for (i in 0 until detailsArray.length()) {
+                    details.add(detailsArray.getString(i))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing details", e)
+        }
+        return details
+    }
+
+    private fun sendProgress(progress: Int) {
+        val intent = Intent(ACTION_SCAN_PROGRESS).apply {
+            putExtra(EXTRA_PROGRESS, progress)
+        }
+        sendBroadcast(intent)
+        Log.d(TAG, "Progress: $progress%")
+    }
+
+    private fun sendScanComplete(success: Boolean) {
+        val intent = Intent(ACTION_SCAN_COMPLETE)
+        sendBroadcast(intent)
+        Log.d(TAG, "Scan complete: $success")
+    }
+
+    private fun sendScanResult(result: ScanResult) {
+        val intent = Intent(ACTION_SCAN_RESULT).apply {
+            putExtra(EXTRA_IS_THREAT, result.isThreat)
+            putExtra(EXTRA_THREAT_TYPE, result.type)
+            putExtra(EXTRA_MESSAGE, result.message)
+            putExtra(EXTRA_DETAILS, result.details.toTypedArray())
+            putExtra(EXTRA_CONFIDENCE, result.confidence)
+        }
+        sendBroadcast(intent)
+        
+        Log.d(TAG, "Result - Threat: ${result.isThreat}, Type: ${result.type}, Message: ${result.message}")
     }
 
     private fun extractText(node: AccessibilityNodeInfo, textList: MutableList<String>) {
         try {
-            // Get text from current node
             if (node.text != null && node.text.isNotEmpty()) {
                 textList.add(node.text.toString())
             }
             
-            // Get content description if available
             if (node.contentDescription != null && node.contentDescription.isNotEmpty()) {
                 textList.add(node.contentDescription.toString())
             }
             
-            // Recursively get text from children
             for (i in 0 until node.childCount) {
                 val child = node.getChild(i)
                 if (child != null) {
@@ -196,14 +243,13 @@ class ScreenReaderService : AccessibilityService() {
                 }
             }
         } catch (e: Exception) {
-            Log.e("StreminiScanner", "Error extracting text: ${e.message}")
+            Log.e(TAG, "Error extracting text", e)
         }
     }
 
     override fun onInterrupt() {
         isScanning = false
         scanJob?.cancel()
-        Log.d("StreminiScanner", "Service Interrupted")
     }
     
     override fun onDestroy() {
@@ -211,6 +257,13 @@ class ScreenReaderService : AccessibilityService() {
         isScanning = false
         scanJob?.cancel()
         serviceScope.cancel()
-        Log.d("StreminiScanner", "Service Destroyed")
     }
+
+    data class ScanResult(
+        val isThreat: Boolean,
+        val type: String,
+        val message: String,
+        val details: List<String>,
+        val confidence: Double
+    )
 }
