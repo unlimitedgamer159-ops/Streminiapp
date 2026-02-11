@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private val channelName = "stremini.chat.overlay"
     private val eventChannelName = "stremini.chat.overlay/events"
     private val keyboardChannelName = "stremini.keyboard"
+    private val scannerChannelName = "stremini.screen.scanner"
     
     private var eventSink: EventChannel.EventSink? = null
 
@@ -95,6 +96,36 @@ class MainActivity : FlutterActivity() {
                     val intent = Intent(this, ChatOverlayService::class.java)
                     stopService(intent)
                     result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+
+        // Scanner channel used by scanner_provider.dart
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, scannerChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "hasAccessibilityPermission" -> {
+                    result.success(isAccessibilityServiceEnabled())
+                }
+                "requestAccessibilityPermission" -> {
+                    requestAccessibilityPermissionSafe()
+                    result.success(true)
+                }
+                "startScanning" -> {
+                    if (isAccessibilityServiceEnabled()) {
+                        startScreenScan()
+                        result.success(true)
+                    } else {
+                        result.error("NO_PERMISSION", "Accessibility service not enabled", null)
+                    }
+                }
+                "stopScanning" -> {
+                    stopScreenScan()
+                    result.success(true)
+                }
+                "isScanning" -> {
+                    result.success(ScreenReaderService.isScanningActive())
                 }
                 else -> result.notImplemented()
             }
@@ -229,6 +260,18 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error starting scan", e)
             Toast.makeText(this, "Error starting scan: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun stopScreenScan() {
+        try {
+            val intent = Intent(this, ScreenReaderService::class.java).apply {
+                action = ScreenReaderService.ACTION_STOP_SCAN
+            }
+            startService(intent)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error stopping scan", e)
+            Toast.makeText(this, "Error stopping scan: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 

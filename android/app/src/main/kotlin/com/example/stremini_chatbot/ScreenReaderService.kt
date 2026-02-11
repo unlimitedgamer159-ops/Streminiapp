@@ -21,6 +21,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.IDN
 import java.net.URI
 import java.util.concurrent.TimeUnit
 
@@ -34,6 +35,7 @@ class ScreenReaderService : AccessibilityService() {
         private const val TAG = "ScreenReaderService"
         private var instance: ScreenReaderService? = null
         fun isRunning(): Boolean = instance != null
+        fun isScanningActive(): Boolean = instance?.isScanning == true
         
         // Colors
         private val DANGER_COLOR = Color.parseColor("#B71C1C") // Red
@@ -63,7 +65,8 @@ class ScreenReaderService : AccessibilityService() {
         val label: String,
         val color: Int,
         val reason: String,
-        val url: String?
+        val url: String?,
+        val message: String?
     )
 
     data class ContentWithPosition(
@@ -150,7 +153,8 @@ class ScreenReaderService : AccessibilityService() {
                         label = securityTag.optString("label", "ALERT"),
                         color = color,
                         reason = details.optString("reason", "Suspicious content"),
-                        url = details.optString("url", null).takeIf { it != "null" }
+                        url = details.optString("url", null).takeIf { it != "null" },
+                        message = details.optString("message", null).takeIf { it != "null" }
                     ))
                 }
             }
@@ -214,59 +218,114 @@ class ScreenReaderService : AccessibilityService() {
 
         createBanner(bannerText, bannerColor, bannerDetail, result.isSafe)
 
+        val threatTags = result.taggedElements.filterNot { it.label.contains("safe", ignoreCase = true) }
+
         // 3. Tag Logic (STRICT POSITIONING)
         if (!result.isSafe) {
-            val taggedPositions = mutableListOf<Pair<Int, Int>>()
-            
-            result.taggedElements.forEach { tag ->
-                if (tag.url != null && tag.url.isNotEmpty()) {
-                    // --- URL MATCHING ---
-                    val host = try { URI(tag.url).host ?: tag.url } catch(e: Exception) { tag.url }
-                    
-                    val matches = contentList.filter { 
-                        it.text.contains(tag.url, ignoreCase = true) || 
-                        tag.url.contains(it.text, ignoreCase = true) ||
-                        it.text.contains(host, ignoreCase = true)
-                    }
+            val remainingNodes = contentList.toMutableList()
 
-                    if (matches.isNotEmpty()) {
-                        matches.forEach { match ->
-                            val posKey = Pair(match.bounds.left, match.bounds.top)
-                            if (!isPositionTagged(taggedPositions, posKey)) {
-                                createFloatingTag(match.bounds, "⚠️ WARNING", DANGER_COLOR) 
-                                taggedPositions.add(posKey)
-                            }
-                        }
-                    } 
-                    // NOTE: REMOVED "Fallback to Center" logic here. 
-                    // If we can't find the link position, we ONLY show the Banner.
+            threatTags.forEach { tag ->
+                val matchedContent = if (!tag.url.isNullOrBlank()) {
+                    findBestUrlNode(tag.url, remainingNodes)
+                        ?: fallbackNodeForTag(tag, remainingNodes)
                 } else {
-                    // --- TEXT MATCHING ---
-                    val keywords = tag.reason.lowercase().split(" ")
-                        .filter { it.length > 4 && !it.matches(Regex(".*[0-9%].*")) }
-                    
-                    val relatedContent = contentList.find { content ->
-                        val lowerContent = content.text.lowercase()
-                        keywords.any { keyword -> lowerContent.contains(keyword) }
-                    }
+                    findBestMessageNode(tag, remainingNodes)
+                        ?: fallbackNodeForTag(tag, remainingNodes)
+                }
 
-                    if (relatedContent != null) {
-                        val posKey = Pair(relatedContent.bounds.left, relatedContent.bounds.top)
-                        if (!isPositionTagged(taggedPositions, posKey)) {
-                            createFloatingTag(relatedContent.bounds, "⚠️ SCAM ALERT", DANGER_COLOR)
-                            taggedPositions.add(posKey)
-                        }
+                if (matchedContent != null) {
+                    val labelText = if (!tag.url.isNullOrBlank()) {
+                        "Danger: Threat Detected"
+                    } else {
+                        "Scam Message: Threat"
                     }
-                    // NOTE: REMOVED "Fallback to Center" logic here too.
+                    createFloatingTag(matchedContent.bounds, labelText, DANGER_COLOR)
+                    remainingNodes.remove(matchedContent)
                 }
             }
         }
     }
 
-    private fun isPositionTagged(existing: List<Pair<Int, Int>>, current: Pair<Int, Int>): Boolean {
-        return existing.any { 
-            Math.abs(it.first - current.first) < 60 && Math.abs(it.second - current.second) < 60 
+    private fun normalizeUrl(input: String): String {
+        return try {
+            val prefixed = if (input.startsWith("http", ignoreCase = true)) input else "https://$input"
+            val uri = URI(prefixed)
+            val host = uri.host?.lowercase()?.let { IDN.toUnicode(it) } ?: ""
+            val path = uri.path?.trimEnd('/') ?: ""
+            val normalizedHost = host.removePrefix("www.")
+            "$normalizedHost$path"
+        } catch (_: Exception) {
+            input.lowercase()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .removePrefix("www.")
+                .trimEnd('/')
         }
+    }
+
+    private fun scoreUrlMatch(tagUrl: String, content: ContentWithPosition): Int {
+        val nodeText = content.text.lowercase()
+        val normalizedTag = normalizeUrl(tagUrl)
+        val normalizedNode = normalizeUrl(nodeText)
+        val tagHost = normalizedTag.substringBefore('/')
+
+        var score = 0
+        if (normalizedNode.contains(normalizedTag)) score += 90
+        if (normalizedTag.contains(normalizedNode) && normalizedNode.length > 5) score += 70
+        if (tagHost.isNotBlank() && normalizedNode.contains(tagHost)) score += 55
+        if (content.isUrl) score += 20
+        if (nodeText.length in 8..200) score += 10
+        return score
+    }
+
+    private fun findBestUrlNode(tagUrl: String, contentList: List<ContentWithPosition>): ContentWithPosition? {
+        return contentList
+            .map { it to scoreUrlMatch(tagUrl, it) }
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+    private fun findBestMessageNode(tag: TaggedElement, contentList: List<ContentWithPosition>): ContentWithPosition? {
+        val sourceText = listOfNotNull(tag.message, tag.reason)
+            .joinToString(" ")
+            .lowercase()
+        val keywords = sourceText
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.length > 3 }
+            .distinct()
+
+        return contentList
+            .map { content ->
+                val text = content.text.lowercase()
+                var score = 0
+
+                keywords.forEach { keyword ->
+                    if (text.contains(keyword)) score += 12
+                }
+                if (!tag.message.isNullOrBlank() && text.contains(tag.message.lowercase())) score += 70
+                if (content.isUrl) score -= 15
+                if (text.length in 8..280) score += 8
+
+                content to score
+            }
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
+
+    private fun fallbackNodeForTag(tag: TaggedElement, contentList: List<ContentWithPosition>): ContentWithPosition? {
+        if (contentList.isEmpty()) return null
+
+        val preferredPool = if (!tag.url.isNullOrBlank()) {
+            contentList.filter { it.isUrl }
+        } else {
+            contentList.filterNot { it.isUrl }
+        }
+
+        val pool = if (preferredPool.isNotEmpty()) preferredPool else contentList
+        return pool.minByOrNull { it.bounds.top }
     }
 
     // ==========================================
@@ -359,19 +418,21 @@ class ScreenReaderService : AccessibilityService() {
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             // STRICT ABSOLUTE POSITIONING
-            gravity = Gravity.TOP or Gravity.LEFT
+            gravity = Gravity.TOP or Gravity.START
             
             // X Position
-            leftMargin = bounds.left.coerceAtLeast(10)
+            leftMargin = bounds.left.coerceAtLeast(12)
             
             // Y Position logic
-            val tagHeight = 80
-            val spaceAbove = bounds.top - 200 // Banner space buffer
-            
-            if (spaceAbove > tagHeight) {
-                topMargin = bounds.top - tagHeight + 10 // Above
+            val tagVerticalGap = 12
+            val estimatedTagHeight = 52
+            val topSafeArea = 190 // keep banner region readable
+
+            val preferredTop = bounds.top - estimatedTagHeight - tagVerticalGap
+            topMargin = if (preferredTop >= topSafeArea) {
+                preferredTop
             } else {
-                topMargin = bounds.bottom + 10 // Below if crowded
+                (bounds.bottom + tagVerticalGap).coerceAtLeast(topSafeArea)
             }
         }
         
