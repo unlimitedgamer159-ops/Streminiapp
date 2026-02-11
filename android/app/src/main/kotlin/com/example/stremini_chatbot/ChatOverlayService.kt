@@ -91,6 +91,8 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     private var windowAnimator: ValueAnimator? = null
     private var isWindowResizing = false
     private var preventPositionUpdates = false
+    private var lastDragUpdateTime = 0L
+    private var scanningOverlayView: ScanningOverlayView? = null
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -140,6 +142,7 @@ class ChatOverlayService : Service(), View.OnTouchListener {
         
         startForegroundService()
         setupOverlay()
+        scanningOverlayView = ScanningOverlayView(this)
 
         val filter = IntentFilter().apply {
             addAction(ACTION_SEND_MESSAGE)
@@ -434,22 +437,19 @@ class ChatOverlayService : Service(), View.OnTouchListener {
     }
 
     private fun handleScanner() {
-        isScannerActive = !isScannerActive
+        isScannerActive = true
         updateMenuItemsColor()
-        
-        // Start or Stop the ScreenReaderService
+
         val intent = Intent(this, ScreenReaderService::class.java)
-        if (isScannerActive) {
-            intent.action = ScreenReaderService.ACTION_START_SCAN
-            startService(intent)
-            Toast.makeText(this, "Screen Detection Enabled", Toast.LENGTH_SHORT).show()
-            Log.d(TAG, "Scanner enabled")
-        } else {
-            intent.action = ScreenReaderService.ACTION_STOP_SCAN
-            startService(intent)
-            Toast.makeText(this, "Screen Detection Disabled", Toast.LENGTH_SHORT).show()
-            Log.d(TAG, "Scanner disabled")
-        }
+        intent.action = ScreenReaderService.ACTION_PERFORM_SINGLE_SCAN
+        startService(intent)
+        Toast.makeText(this, "Scanning current screen...", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Single screen scan triggered")
+
+        overlayView.postDelayed({
+            isScannerActive = false
+            updateMenuItemsColor()
+        }, 3500)
     }
 
     private fun handleVoiceCommand() {
@@ -548,6 +548,9 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isWindowResizing || preventPositionUpdates) return true
+                val now = System.currentTimeMillis()
+                if (now - lastDragUpdateTime < 12) return true
+                lastDragUpdateTime = now
 
                 val dx = (event.rawX - initialTouchX).toInt()
                 val dy = (event.rawY - initialTouchY).toInt()
@@ -814,6 +817,8 @@ class ChatOverlayService : Service(), View.OnTouchListener {
             Log.e(TAG, "Error unregistering receiver", e)
         }
         hideFloatingChatbot()
+        scanningOverlayView?.destroy()
+        scanningOverlayView = null
         if (::overlayView.isInitialized && overlayView.windowToken != null) {
             try {
                 windowManager.removeView(overlayView)

@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.cardview.widget.CardView
+import org.json.JSONArray
 
 class ScanningOverlayView(private val context: Context) {
     
@@ -32,12 +33,14 @@ class ScanningOverlayView(private val context: Context) {
     private var progressBar: ProgressBar? = null
     private var progressText: TextView? = null
     private var statusText: TextView? = null
+    private var scanningSubtitleText: TextView? = null
     private var resultCard: CardView? = null
     private var resultTitle: TextView? = null
     private var resultMessage: TextView? = null
     private var resultDetails: TextView? = null
     
     private var pulseAnimator: ValueAnimator? = null
+    private var tagsContainer: FrameLayout? = null
     
     private val scanReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -55,8 +58,10 @@ class ScanningOverlayView(private val context: Context) {
                     val message = intent.getStringExtra(ScreenReaderService.EXTRA_MESSAGE) ?: ""
                     val details = intent.getStringArrayExtra(ScreenReaderService.EXTRA_DETAILS) ?: emptyArray()
                     val confidence = intent.getDoubleExtra(ScreenReaderService.EXTRA_CONFIDENCE, 0.0)
+                    val tagsJson = intent.getStringExtra(ScreenReaderService.EXTRA_TAGS_JSON) ?: "[]"
                     
                     showResult(isThreat, type, message, details.toList(), confidence)
+                    showTags(tagsJson)
                 }
                 ScreenReaderService.ACTION_SCAN_COMPLETE -> {
                     // Auto-hide after showing result
@@ -126,6 +131,13 @@ class ScanningOverlayView(private val context: Context) {
         val rootLayout = FrameLayout(context).apply {
             setBackgroundColor(Color.parseColor("#DD000000"))
         }
+
+        tagsContainer = FrameLayout(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
         
         val cardView = CardView(context).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -155,6 +167,7 @@ class ScanningOverlayView(private val context: Context) {
         
         cardView.addView(contentLayout)
         rootLayout.addView(cardView)
+        rootLayout.addView(tagsContainer)
         
         return rootLayout
     }
@@ -220,7 +233,7 @@ class ScanningOverlayView(private val context: Context) {
         }
         container.addView(statusText)
         
-        val subText = TextView(context).apply {
+        scanningSubtitleText = TextView(context).apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
@@ -231,7 +244,7 @@ class ScanningOverlayView(private val context: Context) {
             textSize = 14f
             setTextColor(Color.parseColor("#AAAAAA"))
         }
-        container.addView(subText)
+        container.addView(scanningSubtitleText)
         
         layout.addView(container)
         return layout
@@ -306,10 +319,18 @@ class ScanningOverlayView(private val context: Context) {
         confidence: Double
     ) {
         try {
+            progressBar?.visibility = View.VISIBLE
+            progressText?.visibility = View.VISIBLE
+            statusText?.visibility = View.VISIBLE
+            scanningSubtitleText?.visibility = View.VISIBLE
+            resultCard?.visibility = View.GONE
+            resultDetails?.visibility = View.VISIBLE
+
             // Hide scanning section
             progressBar?.visibility = View.GONE
             progressText?.visibility = View.GONE
             statusText?.visibility = View.GONE
+            scanningSubtitleText?.visibility = View.GONE
             
             // Show result section
             resultCard?.visibility = View.VISIBLE
@@ -335,7 +356,7 @@ class ScanningOverlayView(private val context: Context) {
             resultTitle?.text = "$emoji $titleText"
             resultTitle?.setTextColor(color)
             
-            resultMessage?.text = message
+            resultMessage?.text = "$message\nConfidence: ${(confidence * 100).toInt()}%"
             
             if (details.isNotEmpty()) {
                 resultDetails?.text = "Details:\n• " + details.joinToString("\n• ")
@@ -355,6 +376,45 @@ class ScanningOverlayView(private val context: Context) {
             
         } catch (e: Exception) {
             Log.e(TAG, "Error showing result", e)
+        }
+    }
+
+    private fun showTags(tagsJson: String) {
+        val container = tagsContainer ?: return
+        container.removeAllViews()
+
+        try {
+            val tags = JSONArray(tagsJson)
+            for (i in 0 until tags.length()) {
+                val tag = tags.optJSONObject(i) ?: continue
+                val left = tag.optInt("left", 0)
+                val top = tag.optInt("top", 0)
+                val label = tag.optString("label", "⚠️ THREAT")
+                val severity = tag.optString("severity", "warning")
+
+                val tagView = LayoutInflater.from(context).inflate(R.layout.tag_pill, container, false)
+                val tagText = tagView.findViewById<TextView>(R.id.tag_text)
+                tagText.text = label
+                tagText.setBackgroundColor(
+                    when (severity.lowercase()) {
+                        "danger" -> Color.parseColor("#D32F2F")
+                        "safe" -> Color.parseColor("#2E7D32")
+                        else -> Color.parseColor("#FF9800")
+                    }
+                )
+
+                val params = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    leftMargin = left.coerceAtLeast(8)
+                    topMargin = (top - dpToPx(28)).coerceAtLeast(8)
+                }
+
+                container.addView(tagView, params)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to render tags", e)
         }
     }
     
@@ -379,6 +439,7 @@ class ScanningOverlayView(private val context: Context) {
             if (isShowing && overlayView != null) {
                 windowManager?.removeView(overlayView)
                 overlayView = null
+                tagsContainer = null
                 isShowing = false
                 Log.d(TAG, "Overlay hidden")
             }

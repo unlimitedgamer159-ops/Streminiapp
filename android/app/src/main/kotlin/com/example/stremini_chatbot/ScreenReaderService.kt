@@ -2,6 +2,7 @@ package com.example.stremini_chatbot
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Rect
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -10,7 +11,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 class ScreenReaderService : AccessibilityService() {
 
@@ -32,6 +35,7 @@ class ScreenReaderService : AccessibilityService() {
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_DETAILS = "details"
         const val EXTRA_CONFIDENCE = "confidence"
+        const val EXTRA_TAGS_JSON = "tags_json"
         
         private const val API_URL = "https://ai-keyboard-backend.vishwajeetadkine705.workers.dev/security/analyze/text"
         private var isScanning = false
@@ -105,8 +109,10 @@ class ScreenReaderService : AccessibilityService() {
             }
             
             sendProgress(30)
-            val texts = mutableListOf<String>()
-            extractText(rootNode, texts)
+            val nodes = mutableListOf<ScreenTextNode>()
+            extractText(rootNode, nodes)
+
+            val texts = nodes.map { it.text }
             
             val content = texts.joinToString(" ")
             Log.d(TAG, "Extracted ${texts.size} text elements, ${content.length} chars")
@@ -121,7 +127,7 @@ class ScreenReaderService : AccessibilityService() {
             sendProgress(50)
             delay(500) // Slight delay for animation
             
-            val result = callSecurityApi(content)
+            val result = callSecurityApi(content, nodes)
             
             sendProgress(90)
             delay(300)
@@ -140,12 +146,23 @@ class ScreenReaderService : AccessibilityService() {
         }
     }
 
-    private suspend fun callSecurityApi(text: String): ScanResult? {
+    private suspend fun callSecurityApi(text: String, nodes: List<ScreenTextNode>): ScanResult? {
         return try {
             Log.d(TAG, "Calling API: $API_URL")
             
             val jsonBody = JSONObject().apply {
                 put("text", text)
+                put("blocks", JSONArray().apply {
+                    nodes.take(200).forEach { node ->
+                        put(JSONObject().apply {
+                            put("text", node.text)
+                            put("left", node.bounds.left)
+                            put("top", node.bounds.top)
+                            put("right", node.bounds.right)
+                            put("bottom", node.bounds.bottom)
+                        })
+                    }
+                })
             }
             
             val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
@@ -170,7 +187,8 @@ class ScreenReaderService : AccessibilityService() {
                         type = json.optString("type", "safe"),
                         message = json.optString("message", "No threats detected"),
                         details = parseDetailsArray(json),
-                        confidence = json.optDouble("confidence", 0.0)
+                        confidence = json.optDouble("confidence", 0.0),
+                        tagsJson = buildTagsJson(json, nodes)
                     )
                 } else null
             } else {
@@ -219,20 +237,25 @@ class ScreenReaderService : AccessibilityService() {
             putExtra(EXTRA_MESSAGE, result.message)
             putExtra(EXTRA_DETAILS, result.details.toTypedArray())
             putExtra(EXTRA_CONFIDENCE, result.confidence)
+            putExtra(EXTRA_TAGS_JSON, result.tagsJson)
         }
         sendBroadcast(intent)
         
         Log.d(TAG, "Result - Threat: ${result.isThreat}, Type: ${result.type}, Message: ${result.message}")
     }
 
-    private fun extractText(node: AccessibilityNodeInfo, textList: MutableList<String>) {
+    private fun extractText(node: AccessibilityNodeInfo, textList: MutableList<ScreenTextNode>) {
         try {
             if (node.text != null && node.text.isNotEmpty()) {
-                textList.add(node.text.toString())
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                textList.add(ScreenTextNode(node.text.toString(), rect))
             }
             
             if (node.contentDescription != null && node.contentDescription.isNotEmpty()) {
-                textList.add(node.contentDescription.toString())
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                textList.add(ScreenTextNode(node.contentDescription.toString(), rect))
             }
             
             for (i in 0 until node.childCount) {
@@ -259,11 +282,73 @@ class ScreenReaderService : AccessibilityService() {
         serviceScope.cancel()
     }
 
+    private fun buildTagsJson(responseJson: JSONObject, nodes: List<ScreenTextNode>): String {
+        val tags = JSONArray()
+
+        try {
+            val apiTags = responseJson.optJSONArray("tags")
+            if (apiTags != null && apiTags.length() > 0) {
+                for (i in 0 until apiTags.length()) {
+                    val tag = apiTags.optJSONObject(i) ?: continue
+                    tags.put(JSONObject().apply {
+                        put("label", tag.optString("label", "⚠️ THREAT"))
+                        put("severity", tag.optString("severity", "warning"))
+                        put("left", tag.optInt("left", 0))
+                        put("top", tag.optInt("top", 0))
+                    })
+                }
+                return tags.toString()
+            }
+
+            val detailPhrases = parseDetailsArray(responseJson)
+                .map { it.lowercase(Locale.getDefault()) }
+
+            if (detailPhrases.isNotEmpty()) {
+                nodes.asSequence()
+                    .filter { node ->
+                        val nodeText = node.text.lowercase(Locale.getDefault())
+                        detailPhrases.any { phrase -> phrase.isNotBlank() && nodeText.contains(phrase.take(30)) }
+                    }
+                    .distinctBy { "${it.bounds.left}-${it.bounds.top}-${it.bounds.right}-${it.bounds.bottom}" }
+                    .take(8)
+                    .forEach { node ->
+                        tags.put(JSONObject().apply {
+                            put("label", "⚠️ POTENTIAL THREAT")
+                            put("severity", "warning")
+                            put("left", node.bounds.left)
+                            put("top", node.bounds.top)
+                        })
+                    }
+            }
+
+            if (tags.length() == 0 && responseJson.optBoolean("is_threat", false)) {
+                nodes.take(3).forEach { node ->
+                    tags.put(JSONObject().apply {
+                        put("label", "⚠️ REVIEW")
+                        put("severity", responseJson.optString("type", "warning"))
+                        put("left", node.bounds.left)
+                        put("top", node.bounds.top)
+                    })
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building tags json", e)
+        }
+
+        return tags.toString()
+    }
+
+    data class ScreenTextNode(
+        val text: String,
+        val bounds: Rect,
+    )
+
     data class ScanResult(
         val isThreat: Boolean,
         val type: String,
         val message: String,
         val details: List<String>,
-        val confidence: Double
+        val confidence: Double,
+        val tagsJson: String = "[]",
     )
 }
