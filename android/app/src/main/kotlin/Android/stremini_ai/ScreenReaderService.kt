@@ -21,9 +21,8 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.IDN
-import java.net.URI
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 class ScreenReaderService : AccessibilityService() {
 
@@ -48,7 +47,6 @@ class ScreenReaderService : AccessibilityService() {
         private val DANGER_BG_COLOR = Color.parseColor("#38261A")    // Dark Brown/Red Background
         private val DANGER_BORDER_COLOR = Color.parseColor("#5C432D") // Lighter Brown Border
         private val DANGER_TEXT_COLOR = Color.parseColor("#FFD580")  // Orange/Gold Text
-        private val ERROR_RED = Color.parseColor("#FF8080")          // Bright Red for critical icons
     }
 
     private lateinit var windowManager: WindowManager
@@ -81,7 +79,7 @@ class ScreenReaderService : AccessibilityService() {
     data class ContentWithPosition(
         val text: String, 
         val bounds: Rect,
-        val isUrl: Boolean = false
+        val area: Int // Helper for sorting
     )
 
     override fun onServiceConnected() {
@@ -175,11 +173,11 @@ class ScreenReaderService : AccessibilityService() {
     private suspend fun analyzeScreenContent(content: String): ScanResult = withContext(Dispatchers.IO) {
         try {
             val requestBody = JSONObject().apply {
-                put("content", content.take(5000))
+                put("text", content.take(5000)) // Changed key to 'text' to match backend expectation
             }.toString().toRequestBody("application/json".toMediaType())
 
             val request = Request.Builder()
-                .url("https://ai-keyboard-backend.vishwajeetadkine705.workers.dev/security/scan-content")
+                .url("https://ai-keyboard-backend.vishwajeetadkine705.workers.dev/security/analyze/text") // Updated Endpoint
                 .post(requestBody)
                 .build()
 
@@ -192,29 +190,33 @@ class ScreenReaderService : AccessibilityService() {
             val responseData = response.body?.string() ?: ""
             val json = JSONObject(responseData)
 
-            val taggedArray = json.optJSONArray("taggedElements")
+            // Parse Backend Response
+            val isThreat = json.optBoolean("is_threat", false)
+            val detailsArray = json.optJSONArray("details")
             val tags = mutableListOf<TaggedElement>()
-            if (taggedArray != null) {
-                for (i in 0 until taggedArray.length()) {
-                    val item = taggedArray.getJSONObject(i)
-                    
-                    val label = item.optString("label", "Threat Detected")
-                    val matchedText = item.optString("matchedText", "Suspicious Content")
+
+            if (detailsArray != null) {
+                for (i in 0 until detailsArray.length()) {
+                    val detail = detailsArray.getString(i)
+                    // Create a tag for each detail found. 
+                    // Note: We need to map the "detail" back to a keyword if possible, 
+                    // or just tag the whole screen if specific mapping isn't available.
+                    // For this logic, we will try to find the keyword within the detail string.
                     
                     tags.add(TaggedElement(
-                        label = label,
+                        label = "Alert",
                         color = DANGER_TEXT_COLOR,
-                        reason = matchedText,
+                        reason = detail, // Using the detail itself as the "keyword" search might be too broad, but serves as fallback
                         url = null,
-                        message = matchedText
+                        message = detail
                     ))
                 }
             }
 
             ScanResult(
-                isSafe = json.optBoolean("isSafe", true),
-                riskLevel = json.optString("riskLevel", "safe"),
-                summary = json.optString("summary", ""),
+                isSafe = !isThreat,
+                riskLevel = json.optString("type", "safe"),
+                summary = "Confidence: ${json.optDouble("confidence", 0.0)}",
                 taggedElements = tags
             )
         } catch (e: Exception) {
@@ -241,12 +243,13 @@ class ScreenReaderService : AccessibilityService() {
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, 
             PixelFormat.TRANSLUCENT
         )
-        containerParams.gravity = Gravity.TOP or Gravity.START
+        // Ensure gravity is Top-Left so margins act as absolute coordinates
+        containerParams.gravity = Gravity.TOP or Gravity.START 
         containerParams.x = 0
         containerParams.y = 0
         windowManager.addView(tagsContainer, containerParams)
 
-        // 2. Banner Logic
+        // 2. Banner Logic (Top of screen)
         val bannerTitle = if (result.isSafe) "Safe: No Threat Detected" else "Warning: Potential Threats"
         val bannerBg = if (result.isSafe) SAFE_BG_COLOR else DANGER_BG_COLOR
         val bannerBorder = if (result.isSafe) SAFE_BORDER_COLOR else DANGER_BORDER_COLOR
@@ -257,20 +260,55 @@ class ScreenReaderService : AccessibilityService() {
         // 3. Tag Logic
         if (!result.isSafe) {
             result.taggedElements.forEach { tag ->
-                // Basic matching: find screen element containing the threat text
-                val keyword = tag.reason.lowercase()
-                val match = contentList.find { content -> 
-                    content.text.lowercase().contains(keyword) 
+                // IMPROVED MATCHING:
+                // Find ALL elements that contain the threat text.
+                // We split the reason into keywords to find a match on screen.
+                // E.g. "Investment scam pattern" -> look for "Investment" or matches in the text
+                
+                // Simple heuristic: Try to match the exact phrase, if not, try partials.
+                // For this implementation, we rely on the logic that 'reason' might be a keyword.
+                // In a real scenario, the backend should return the "snippet" that triggered the alert.
+                
+                // As a robust fallback, we search for the MOST SPECIFIC element (smallest area)
+                // that contains relevant text to the threat.
+                
+                // Just for Demo: scanning the contentList for common scam words if the tag doesn't provide specific location text
+                val searchTerms = tag.reason.split(" ").filter { it.length > 4 }
+                
+                var bestMatch: ContentWithPosition? = null
+                
+                // Try to find a node that matches the specific tag reason
+                val directMatches = contentList.filter { content -> 
+                    content.text.contains(tag.reason, ignoreCase = true) 
+                }
+                
+                if (directMatches.isNotEmpty()) {
+                    // Pick the smallest node (likely the specific UI element, not the whole page)
+                    bestMatch = directMatches.minByOrNull { it.area }
+                } else {
+                    // Fallback: search for keywords from the reason
+                    for (term in searchTerms) {
+                        val termMatches = contentList.filter { it.text.contains(term, ignoreCase = true) }
+                        if (termMatches.isNotEmpty()) {
+                            bestMatch = termMatches.minByOrNull { it.area }
+                            break // Found a match for a keyword
+                        }
+                    }
                 }
 
-                if (match != null) {
-                    createFloatingTag(match.bounds, tag.label, DANGER_BG_COLOR, DANGER_BORDER_COLOR, DANGER_TEXT_COLOR)
+                if (bestMatch != null) {
+                    createFloatingTag(bestMatch.bounds, tag.label, DANGER_BG_COLOR, DANGER_BORDER_COLOR, DANGER_TEXT_COLOR, tag.reason)
                 }
             }
         } else {
             // Optional: Tag known safe elements to reassure user
-            contentList.filter { it.text.contains("google", ignoreCase = true) || it.text.contains("wikipedia", ignoreCase = true) }.forEach {
-                createFloatingTag(it.bounds, "Verified Safe", SAFE_BG_COLOR, SAFE_BORDER_COLOR, SAFE_TEXT_COLOR)
+            val safeMatches = contentList.filter { 
+                it.text.contains("google", ignoreCase = true) || it.text.contains("wikipedia", ignoreCase = true) 
+            }
+            
+            // Limit safe tags to avoid clutter
+            safeMatches.minByOrNull { it.area }?.let { match ->
+                 createFloatingTag(match.bounds, "Verified Safe", SAFE_BG_COLOR, SAFE_BORDER_COLOR, SAFE_TEXT_COLOR, "Source Verified")
             }
         }
     }
@@ -325,33 +363,39 @@ class ScreenReaderService : AccessibilityService() {
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            topMargin = dpToPx(40) // Status bar clear
+            topMargin = dpToPx(50) // Status bar clear
         }
 
         tagsContainer?.addView(bannerLayout, params)
     }
 
-    private fun createFloatingTag(bounds: Rect, labelText: String, bgColor: Int, borderColor: Int, textColor: Int) {
+    private fun createFloatingTag(bounds: Rect, labelText: String, bgColor: Int, borderColor: Int, textColor: Int, subText: String? = null) {
         val context = this
         
         val pill = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(6))
+            orientation = LinearLayout.VERTICAL // Changed to Vertical to support subtext
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6))
             background = GradientDrawable().apply {
                 setColor(bgColor)
-                cornerRadius = dpToPx(20).toFloat()
+                cornerRadius = dpToPx(8).toFloat()
                 setStroke(dpToPx(1), borderColor)
             }
             elevation = 15f
         }
         
+        // Header Row (Icon + Label)
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
         val icon = TextView(context).apply {
             text = if (bgColor == SAFE_BG_COLOR) "✓" else "!"
             setTextColor(textColor)
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, dpToPx(6), 0)
+            setPadding(0, 0, dpToPx(4), 0)
         }
 
         val label = TextView(context).apply {
@@ -361,22 +405,47 @@ class ScreenReaderService : AccessibilityService() {
             setTypeface(Typeface.DEFAULT_BOLD)
             maxLines = 1
         }
+        
+        header.addView(icon)
+        header.addView(label)
+        pill.addView(header)
 
-        pill.addView(icon)
-        pill.addView(label)
+        // Subtext (Reason)
+        if (!subText.isNullOrEmpty()) {
+            val subMsg = TextView(context).apply {
+                text = subText
+                setTextColor(Color.parseColor("#DDDDDD"))
+                textSize = 10f
+                maxLines = 2
+                gravity = Gravity.CENTER
+            }
+            pill.addView(subMsg)
+        }
 
+        // --- POSITIONING LOGIC ---
         val params = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            
-            // Positioning Logic
-            leftMargin = bounds.left.coerceAtLeast(10)
-            // Position above the element, but ensure it doesn't overlap the top banner area
-            topMargin = (bounds.top - dpToPx(35)).coerceAtLeast(dpToPx(90))
-        }
+        )
         
+        params.gravity = Gravity.TOP or Gravity.START // Crucial for absolute positioning via margins
+        params.leftMargin = bounds.left.coerceAtLeast(0) // Align with left of element
+        
+        // Calculate Y Position:
+        // Try to place it ABOVE the element.
+        // If element is too high (near top banner), place it BELOW.
+        
+        val tagHeightEstimate = dpToPx(40) // Rough height of our tag
+        val bannerZone = dpToPx(110) // Approx height of banner + status bar area
+        
+        if (bounds.top - tagHeightEstimate > bannerZone) {
+            // Place Above
+            params.topMargin = bounds.top - tagHeightEstimate - dpToPx(5)
+        } else {
+            // Place Below
+            params.topMargin = bounds.bottom + dpToPx(5)
+        }
+
         tagsContainer?.addView(pill, params)
     }
 
@@ -386,8 +455,13 @@ class ScreenReaderService : AccessibilityService() {
             val bounds = Rect()
             node.getBoundsInScreen(bounds)
             
+            // Filter out invalid/invisible elements
             if (bounds.width() > 10 && bounds.height() > 10 && bounds.left >= 0 && bounds.top >= 0) {
-                 list.add(ContentWithPosition(text.trim(), bounds))
+                 list.add(ContentWithPosition(
+                     text = text.trim(), 
+                     bounds = bounds,
+                     area = bounds.width() * bounds.height()
+                 ))
             }
         }
         for (i in 0 until node.childCount) {
@@ -407,7 +481,7 @@ class ScreenReaderService : AccessibilityService() {
             }
             
             val loadingText = TextView(this).apply {
-                 text = "Scanning..."
+                 text = "Analyzing..."
                  setTextColor(Color.WHITE)
                  textSize = 20f
                  gravity = Gravity.CENTER
